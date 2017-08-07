@@ -234,7 +234,7 @@ func processNode(k *Kubernetes, node *apiv1.Node) (deleteAfter time.Time, err er
 		err = k.SetNodeAnnotation(node, annotationGKEPreemptibleKillerDeleteAfter, deleteAfter.String())
 
 		if err != nil {
-			err = fmt.Errorf("Error updating node %s metadata", *node.Metadata.Name)
+			err = fmt.Errorf("Error updating node %s metadata: %v", *node.Metadata.Name, err)
 			return
 		}
 	}
