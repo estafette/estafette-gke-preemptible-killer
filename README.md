@@ -17,12 +17,18 @@ of time between 12 and 24h. It make use of the node annotation to store the time
 
 ### In cluster
 
-First deploy the application to Kubernetes cluster using the following manifest. Make sure to pass the following
+First deploy the application to Kubernetes cluster using the manifest below. Make sure to pass the following
 mandatory environment variable:
 
 - GOOGLE_PROJECT_ID: id of the Google project
 - GOOGLE_INSTANCE_ZONE: [zone](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available) where the node pool is hosted
-- NODEPOOL: name of the node pool
+- NODE_POOL: name of the node pool
+
+Optional variables for out of cluster usage:
+
+- KUBERNETES_SERVICE_HOST: Kubernetes service host (out of cluster use)
+- KUBERNETES_SERVICE_PORT: Kubernetes service port (out of cluster use)
+- KUBECONFIG: Kubernetes KubeConfig path (out of cluster use)
 
 
 ```yaml
