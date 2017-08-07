@@ -17,11 +17,7 @@ of time between 12 and 24h. It make use of the node annotation to store the time
 
 ### In cluster
 
-First deploy the application to Kubernetes cluster using the manifest below. Make sure to pass the following
-mandatory environment variable:
-
-- GOOGLE_PROJECT_ID: id of the Google project
-- GOOGLE_INSTANCE_ZONE: [zone](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available) where the node pool is hosted
+First deploy the application to Kubernetes cluster using the manifest below.
 
 Optional variables for out of cluster usage:
 
@@ -56,11 +52,6 @@ spec:
       containers:
       - name: estafette-gke-preemptible-killer
         image: estafette/estafette-gke-preemptible-killer:latest
-        env:
-        - name: "GOOGLE_PROJECT_ID"
-          value: "my-project-id"
-        - name: "GOOGLE_INSTANCE_ZONE"
-          value: "europe-west1-c"
         resources:
           requests:
             cpu: 10m
@@ -83,8 +74,5 @@ spec:
 kubectl proxy
 
 # in another shell
-export GOOGLE_INSTANCE_ZONE=europe-west1-c
-export GOOGLE_PROJECT_ID=my-project-id
-
 go build && ./estafette-gke-preemptible-killer
 ```

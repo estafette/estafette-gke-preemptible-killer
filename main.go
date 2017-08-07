@@ -64,23 +64,6 @@ func main() {
 	fmt.Printf("Starting estafette-gke-preemptible-killer (version=%v, branch=%v, revision=%v, buildDate=%v, goVersion=%v)\n",
 		version, branch, revision, buildDate, goVersion)
 
-	googleProjectId := os.Getenv("GOOGLE_PROJECT_ID")
-	googleInstanceZone := os.Getenv("GOOGLE_INSTANCE_ZONE")
-
-	if googleProjectId == "" {
-		log.Fatal("Error: GOOGLE_PROJECT_ID is mandatory")
-	}
-
-	if googleInstanceZone == "" {
-		log.Fatal("Error: GOOGLE_INSTANCE_ZONE is mandatory")
-	}
-
-	gcloud, err := NewGCloudClient(googleProjectId, googleInstanceZone)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	kubernetes, err := NewKubernetesClient(os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT"),
 		os.Getenv("KUBERNETES_NAMESPACE"), os.Getenv("KUBECONFIG"))
 
@@ -175,19 +158,29 @@ func main() {
 					continue
 				}
 
+				projectId, zone, err := kubernetes.GetProjectIdAndZoneFromNode(nodeName)
+
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				gcloud, err := NewGCloudClient(projectId, zone)
+
+				if err != nil {
+					log.Fatal(err)
+				}
+
 				// delete kubernetes node
 				err = kubernetes.DeleteNode(nodeName)
 				if err != nil {
-					err = fmt.Errorf("Error deleting node %s: %v", nodeName, err)
-					continue
+					log.Fatalf("Error deleting kubernetes node %s: %v\n", nodeName, err)
 				}
 
 				// delete gcloud instance
 				err = gcloud.DeleteNode(nodeName)
 
 				if err != nil {
-					err = fmt.Errorf("Error deleting node %s: %v", nodeName, err)
-					continue
+					log.Fatalf("Error deleting gcloud instance %s: %v\n", nodeName, err)
 				}
 
 				fmt.Printf("[%s] Deleted\n", nodeName)

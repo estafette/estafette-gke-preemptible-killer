@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/ericchiang/k8s"
 	apiv1 "github.com/ericchiang/k8s/api/v1"
@@ -57,6 +58,22 @@ func NewKubernetesClient(host string, port string, namespace string, kubeConfigP
 	kubernetes = &Kubernetes{
 		Client: k8sClient,
 	}
+
+	return
+}
+
+// GetProjectIdAndZoneFromNode returns project id and zone from given node name
+// by getting informations from node spec provider id
+func (k *Kubernetes) GetProjectIdAndZoneFromNode(name string) (projectId string, zone string, err error) {
+	node, err := k.GetNode(name)
+
+	if err != nil {
+		return
+	}
+
+	s := strings.Split(*node.Spec.ProviderID, "/")
+	projectId = s[2]
+	zone = s[3]
 
 	return
 }
