@@ -26,8 +26,6 @@ mandatory environment variable:
 
 Optional variables for out of cluster usage:
 
-- KUBERNETES_SERVICE_HOST: Kubernetes service host (out of cluster use)
-- KUBERNETES_SERVICE_PORT: Kubernetes service port (out of cluster use)
 - KUBECONFIG: Kubernetes KubeConfig path (out of cluster use)
 
 
@@ -81,7 +79,6 @@ spec:
           timeoutSeconds: 1
 ```
 
-
 ### Local development
 
 ```
@@ -93,5 +90,5 @@ export GOOGLE_INSTANCE_ZONE=europe-west1-c
 export GOOGLE_PROJECT_ID=my-project-id
 export NODE_POOL=node-pool-name
 
-go run main.go
+go build && ./estafette-gke-preemptible-killer
 ```

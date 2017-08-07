@@ -64,13 +64,28 @@ func main() {
 	fmt.Printf("Starting estafette-gke-preemptible-killer (version=%v, branch=%v, revision=%v, buildDate=%v, goVersion=%v)\n",
 		version, branch, revision, buildDate, goVersion)
 
-	gcloud, err := NewGCloudClient(os.Getenv("GOOGLE_PROJECT_ID"), os.Getenv("GOOGLE_INSTANCE_ZONE"))
+	googleProjectId := os.Getenv("GOOGLE_PROJECT_ID")
+	googleInstanceZone := os.Getenv("GOOGLE_INSTANCE_ZONE")
+
+	if googleProjectId == "" {
+		log.Fatal("Error: GOOGLE_PROJECT_ID is mandatory")
+	}
+
+	if googleInstanceZone == "" {
+		log.Fatal("Error: GOOGLE_INSTANCE_ZONE is mandatory")
+	}
+
+	gcloud, err := NewGCloudClient(googleProjectId, googleInstanceZone)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	nodePool := os.Getenv("NODE_POOL")
+
+	if nodePool == "" {
+		log.Fatal("Error: NODE_POOL is mandatory")
+	}
 
 	kubernetes, err := NewKubernetesClient(os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT"),
 		os.Getenv("KUBERNETES_NAMESPACE"), os.Getenv("KUBECONFIG"))

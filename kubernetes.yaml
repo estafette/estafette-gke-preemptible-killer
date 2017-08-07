@@ -41,13 +41,14 @@ spec:
       serviceAccount: ${APP_NAME}
       containers:
       - name: ${APP_NAME}
-        image: estafette/estafette-cloudflare-dns:${GO_PIPELINE_LABEL}
-        imagePullPolicy: Always
+        image: estafette/estafette-gke-preemptible-killer:${GO_PIPELINE_LABEL}
         env:
-        - name: "CF_API_EMAIL"
-          value: "${CF_API_EMAIL}"
-        - name: "CF_API_KEY"
-          value: "${CF_API_KEY}"
+        - name: "GOOGLE_PROJECT_ID"
+          value: "${GOOGLE_PROJECT_ID}"
+        - name: "GOOGLE_INSTANCE_ZONE"
+          value: "${GOOGLE_INSTANCE_ZONE}"
+        - name: "NODE_POOL"
+          value: "${NODE_POOL}"
         resources:
           requests:
             cpu: ${CPU_REQUEST}
