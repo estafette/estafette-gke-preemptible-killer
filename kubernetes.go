@@ -17,11 +17,11 @@ type Kubernetes struct {
 
 type KubernetesClient interface {
 	DeleteNode(string)
-	GetPreemptibleNodes(string) (*apiv1.NodeList, error)
-	PreemptibleNodeLabel(string) k8s.Option
+	GetPreemptibleNodes() (*apiv1.NodeList, error)
+	PreemptibleNodeLabel() k8s.Option
 	SetNodeAnnotation(*apiv1.Node, string, string) (*apiv1.Node, error)
 	SetSchedulableState(*apiv1.Node, bool) (*apiv1.Node, error)
-	WatchNodes(string) (*k8s.CoreV1NodeWatcher, error)
+	WatchPreemptibleNodes() (*k8s.CoreV1NodeWatcher, error)
 }
 
 // NewKubernetesClient return a Kubernetes client
@@ -62,16 +62,15 @@ func NewKubernetesClient(host string, port string, namespace string, kubeConfigP
 }
 
 // PreemptibleNodeLabel return a labels selector for a preemptible node pool
-func (k *Kubernetes) PreemptibleNodeLabel(nodePool string) k8s.Option {
+func (k *Kubernetes) PreemptibleNodeLabel() k8s.Option {
 	labels := new(k8s.LabelSelector)
 	labels.Eq("cloud.google.com/gke-preemptible", "true")
-	labels.Eq("cloud.google.com/gke-nodepool", nodePool)
 	return labels.Selector()
 }
 
 // GetPreemptibleNodes return a list of preemptible node from a given node pool name
-func (k *Kubernetes) GetPreemptibleNodes(nodePool string) (nodes *apiv1.NodeList, err error) {
-	nodes, err = k.Client.CoreV1().ListNodes(context.Background(), k.PreemptibleNodeLabel(nodePool))
+func (k *Kubernetes) GetPreemptibleNodes() (nodes *apiv1.NodeList, err error) {
+	nodes, err = k.Client.CoreV1().ListNodes(context.Background(), k.PreemptibleNodeLabel())
 	return
 }
 
@@ -103,8 +102,8 @@ func (k *Kubernetes) DeleteNode(name string) (err error) {
 }
 
 // WatchNodes watch for updated preemptible node from a given node pool
-func (k *Kubernetes) WatchNodes(nodePool string) (watcher *k8s.CoreV1NodeWatcher, err error) {
-	watcher, err = k.Client.CoreV1().WatchNodes(context.Background(), k.PreemptibleNodeLabel(nodePool))
+func (k *Kubernetes) WatchPreemptibleNodes() (watcher *k8s.CoreV1NodeWatcher, err error) {
+	watcher, err = k.Client.CoreV1().WatchNodes(context.Background(), k.PreemptibleNodeLabel())
 	return
 }
 

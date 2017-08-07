@@ -81,12 +81,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	nodePool := os.Getenv("NODE_POOL")
-
-	if nodePool == "" {
-		log.Fatal("Error: NODE_POOL is mandatory")
-	}
-
 	kubernetes, err := NewKubernetesClient(os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT"),
 		os.Getenv("KUBERNETES_NAMESPACE"), os.Getenv("KUBECONFIG"))
 
@@ -110,7 +104,7 @@ func main() {
 	go func() {
 		for {
 			fmt.Println("Watching nodes...")
-			watcher, err := kubernetes.WatchNodes(nodePool)
+			watcher, err := kubernetes.WatchPreemptibleNodes()
 
 			defer nodeListStore.Mutex.Unlock()
 
@@ -140,15 +134,15 @@ func main() {
 						nodeAddedTotals.With(prometheus.Labels{"name": *node.Metadata.Name}).Inc()
 
 						fmt.Printf("[%s] node added to the store\n", *node.Metadata.Name)
-
 					} else if *event.Type == k8s.EventDeleted {
+						deletedNodeName := *node.Metadata.Name
+
 						nodeListStore.Mutex.Lock()
 						delete(nodeListStore.Items, *node.Metadata.Name)
 						nodeListStore.Mutex.Unlock()
 
-						nodeDeletedTotals.With(prometheus.Labels{"name": *node.Metadata.Name}).Inc()
-
-						fmt.Printf("[%s] node deleted from the store")
+						nodeDeletedTotals.With(prometheus.Labels{"name": deletedNodeName}).Inc()
+						fmt.Printf("[%s] node deleted from the store", deletedNodeName)
 					}
 				}
 			}
@@ -164,7 +158,9 @@ func main() {
 	for {
 		now := time.Now()
 
+		defer nodeListStore.Mutex.Unlock()
 		nodeListStore.Mutex.Lock()
+
 		for nodeName, deleteAfter := range nodeListStore.Items {
 			timeDiff := deleteAfter.Sub(now).Minutes()
 			fmt.Printf("[%s] Time diff: %f\n", nodeName, timeDiff)
@@ -176,14 +172,14 @@ func main() {
 				err = kubernetes.SetSchedulableState(nodeName, false)
 				if err != nil {
 					err = fmt.Errorf("Error setting schedulable state to node %s: %v", nodeName, err)
-					return
+					continue
 				}
 
 				// delete kubernetes node
 				err = kubernetes.DeleteNode(nodeName)
 				if err != nil {
 					err = fmt.Errorf("Error deleting node %s: %v", nodeName, err)
-					return
+					continue
 				}
 
 				// delete gcloud instance
@@ -191,7 +187,7 @@ func main() {
 
 				if err != nil {
 					err = fmt.Errorf("Error deleting node %s: %v", nodeName, err)
-					return
+					continue
 				}
 
 				fmt.Printf("[%s] Deleted\n", nodeName)

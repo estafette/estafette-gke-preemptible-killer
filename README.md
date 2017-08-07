@@ -22,7 +22,6 @@ mandatory environment variable:
 
 - GOOGLE_PROJECT_ID: id of the Google project
 - GOOGLE_INSTANCE_ZONE: [zone](https://cloud.google.com/compute/docs/regions-zones/regions-zones#available) where the node pool is hosted
-- NODE_POOL: name of the node pool
 
 Optional variables for out of cluster usage:
 
@@ -62,8 +61,6 @@ spec:
           value: "my-project-id"
         - name: "GOOGLE_INSTANCE_ZONE"
           value: "europe-west1-c"
-        - name: "NODE_POOL"
-          value: "node-pool-name"
         resources:
           requests:
             cpu: 10m
@@ -88,7 +85,6 @@ kubectl proxy
 # in another shell
 export GOOGLE_INSTANCE_ZONE=europe-west1-c
 export GOOGLE_PROJECT_ID=my-project-id
-export NODE_POOL=node-pool-name
 
 go build && ./estafette-gke-preemptible-killer
 ```
