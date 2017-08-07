@@ -1,13 +1,13 @@
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRole
 metadata:
-  name: estafetter-gke-preemptible-killer
+  name: estafette-gke-preemptible-killer
   labels:
-    app: estafetter-gke-preemptible-killer
+    app: estafette-gke-preemptible-killer
 rules:
 - apiGroups: [""] # "" indicates the core API group
   resources:
-  - services
+  - nodes
   verbs:
   - delete
   - get
@@ -18,14 +18,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding
 metadata:
-  name: estafetter-gke-preemptible-killer
+  name: estafette-gke-preemptible-killer
   labels:
-    app: estafetter-gke-preemptible-killer
+    app: estafette-gke-preemptible-killer
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: estafetter-gke-preemptible-killer
+  name: estafette-gke-preemptible-killer
 subjects:
 - kind: ServiceAccount
-  name: estafetter-gke-preemptible-killer
+  name: estafette-gke-preemptible-killer
   namespace: estafette
