@@ -1,0 +1,35 @@
+labels:
+  app: estafette-gke-preemptible-killer
+  team: estafette-team
+  language: golang
+
+pipelines:
+  build:
+    image: golang:1.8.1-alpine
+    workDir: /go/src/github.com/estafette/${ESTAFETTE_LABEL_APP}
+    commands:
+    - go test `go list ./... | grep -v /vendor/`
+    - CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags "-X main.version=${ESTAFETTE_BUILD_VERSION} -X main.revision=${ESTAFETTE_GIT_REVISION} -X main.branch=${ESTAFETTE_GIT_BRANCH} -X main.buildDate=${ESTAFETTE_BUILD_DATETIME}" -o ./publish/${ESTAFETTE_LABEL_APP} .
+
+  bake:
+    image: docker:17.04.0-ce
+    commands:
+    - cp Dockerfile ./publish
+    - cp /etc/ssl/certs/ca-certificates.crt ./publish
+    - docker build -t estafette/${ESTAFETTE_LABEL_APP}:${ESTAFETTE_BUILD_VERSION} ./publish
+
+  push-to-docker-hub:
+    image: docker:17.04.0-ce
+    commands:
+    - docker login --username=${ESTAFETTE_DOCKER_HUB_USERNAME} --password="${ESTAFETTE_DOCKER_HUB_PASSWORD}"
+    - docker push estafette/${ESTAFETTE_LABEL_APP}:${ESTAFETTE_BUILD_VERSION}
+    when:
+      status == 'succeeded' &&
+      branch == 'master'
+
+  slack-notify:
+    image: docker:17.04.0-ce
+    commands:
+    - 'curl -X POST --data-urlencode ''payload={"channel": "#build-status", "username": "estafette-ci-builder", "text": "Build ''${ESTAFETTE_BUILD_VERSION}'' for ''${ESTAFETTE_LABEL_APP}'' has failed!"}'' ${ESTAFETTE_SLACK_WEBHOOK}'
+    when:
+      status == 'failed'
