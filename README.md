@@ -13,15 +13,29 @@ prevent large disruption, the estafette-gke-preemptible-killer can be used to ki
 of time between 12 and 24h. It make use of the node annotation to store the time to kill value.
 
 
+## How does that work
+
+At a given interval, the application get the list of preemptible nodes and check weither the node should be
+deleted or not. If the annotation doesn't exist, we define a new time to kill annotation with a random range
+between 12h and 24h based on the node creation time stamp.
+When the time to kill time is passed, the Kubernetes node is marked as unschedulable, drained and the instance
+deleted on GCloud.
+
+
 ## Usage
+
+Available flags:
+
+- drain-node-timeout=300 max time in second to wait before deleting a node
+- shutdown-listen-address=:8080 the address to listen on for graceful shutdown
+- shutdown-timeout=120 max time in second to wait before shutting down the application
+- prometheus-listen-address=:9109 the address to listen on for HTTP requests
+- watch-interval=120 time in second to wait between each node check
+
 
 ### In cluster
 
 First deploy the application to Kubernetes cluster using the manifest below.
-
-Optional variables for out of cluster usage:
-
-- KUBECONFIG: Kubernetes KubeConfig path (out of cluster use)
 
 
 ```yaml
@@ -65,6 +79,10 @@ spec:
             port: 9101
           initialDelaySeconds: 30
           timeoutSeconds: 1
+        lifecycle:
+          preStop:
+            exec:
+              command: ["curl http://localhost:8080/quit"]
 ```
 
 ### Local development
@@ -76,3 +94,5 @@ kubectl proxy
 # in another shell
 go build && ./estafette-gke-preemptible-killer
 ```
+
+Note: KUBECONFIG=~/.kube/config as environment variable can also be used if you don't want to use the `kubectl proxy` command.

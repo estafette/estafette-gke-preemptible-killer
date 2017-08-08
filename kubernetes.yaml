@@ -3,6 +3,45 @@ kind: Namespace
 metadata:
   name: ${NAMESPACE}
 ---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: estafette-gke-preemptible-killer
+  labels:
+    app: estafette-gke-preemptible-killer
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources:
+  - nodes
+  verbs:
+  - delete
+  - get
+  - list
+  - patch
+  - update
+- apiGroups: [""] # "" indicates the core API group
+  resources:
+  - pods
+  verbs:
+  - delete
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: estafette-gke-preemptible-killer
+  labels:
+    app: estafette-gke-preemptible-killer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: estafette-gke-preemptible-killer
+subjects:
+- kind: ServiceAccount
+  name: estafette-gke-preemptible-killer
+  namespace: estafette
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -62,3 +101,7 @@ spec:
             port: 9101
           initialDelaySeconds: 30
           timeoutSeconds: 1
+        lifecycle:
+          preStop:
+            exec:
+              command: ["curl http://localhost:8080/quit"]

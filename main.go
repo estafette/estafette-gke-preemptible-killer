@@ -8,17 +8,20 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"sync"
 	"time"
 
-	"github.com/ericchiang/k8s"
 	apiv1 "github.com/ericchiang/k8s/api/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
-	addr = flag.String("listen-address", ":9101", "The address to listen on for HTTP requests.")
+	// flags
+	DrainNodeTimeout        = flag.Int("drain-node-timeout", 300, " Max time in second to wait before deleting a node.")
+	gracefulShutdownAddr    = flag.String("shutdown-listen-address", ":8080", "The address to listen on for graceful shutdown.")
+	gracefulShutdownTimeout = flag.Int("shutdown-timeout", 120, "Max time in second to wait before shutting down the application.")
+	prometheusAddr          = flag.String("prometheus-listen-address", ":9101", "The address to listen on for HTTP requests.")
+	watchInterval           = flag.Int("watch-interval", 120, "Time in second to wait between each node check.")
 
 	// define prometheus counter
 	nodeAddedTotals = prometheus.NewCounterVec(
@@ -36,6 +39,9 @@ var (
 		[]string{"name"},
 	)
 
+	// safeQuit should be set to true if no process are pending (pod/node deletion in progress)
+	safeQuit bool = true
+
 	// application version
 	version   string
 	branch    string
@@ -44,15 +50,8 @@ var (
 	goVersion = runtime.Version()
 )
 
-const (
-	annotationGKEPreemptibleKillerDeleteAfter string = "estafette.io/gke-preemptible-killer-delete-after-n-minutes"
-)
-
-// NodeStore is used to store node name and its associated time when the node need to be killed
-type NodeStore struct {
-	Items map[string]time.Time
-	Mutex *sync.Mutex
-}
+// annotationGKEPreemptibleKillerDeleteAfter is the key of the annotation to use to store the time to kill
+const annotationGKEPreemptibleKillerDeleteAfter string = "estafette.io/gke-preemptible-killer-delete-after-n-minutes"
 
 func init() {
 	// Metrics have to be registered to be exposed:
@@ -71,142 +70,92 @@ func main() {
 		log.Fatal(err)
 	}
 
-	nodeListStore := &NodeStore{
-		Mutex: &sync.Mutex{},
-		Items: make(map[string]time.Time),
-	}
-
 	// start prometheus
 	go func() {
-		fmt.Println("Serving Prometheus metrics at :9101/metrics...")
+		log.Println("Start serving Prometheus metrics at :9101/metrics...")
 		http.Handle("/metrics", promhttp.Handler())
-		log.Fatal(http.ListenAndServe(*addr, nil))
+		log.Fatal(http.ListenAndServe(*prometheusAddr, nil))
 	}()
 
-	// watch for new nodes and initialise the node list store
-	go func() {
-		for {
-			fmt.Println("Watching nodes...")
-			watcher, err := kubernetes.WatchPreemptibleNodes()
+	// gracefull shutdown of the application
+	go gracefulShutdown()
 
-			defer nodeListStore.Mutex.Unlock()
+	// process nodes
+	for {
+		log.Printf("Processing nodes")
+
+		sleepTime := ApplyJitter(*watchInterval)
+
+		nodes, err := kubernetes.GetPreemptibleNodes()
+
+		if err != nil {
+			log.Printf("Error while getting the list of preemptible nodes: %v\n", err)
+			log.Printf("Sleeping for %v seconds...\n", sleepTime)
+			time.Sleep(time.Duration(sleepTime) * time.Second)
+			continue
+		}
+
+		for _, node := range nodes.Items {
+			// specify to the gracefulShutdown that we cannot quit until it finish
+			safeQuit = false
+			err := processNode(kubernetes, node)
 
 			if err != nil {
-				log.Println(err)
-			} else {
-				// loop indefinitely, unless it errors
-				for {
-					event, node, err := watcher.Next()
-					if err != nil {
-						log.Println(err)
-						break
-					}
-
-					if *event.Type == k8s.EventAdded {
-						deleteAfter, err := processNode(kubernetes, node)
-
-						if err != nil {
-							log.Println(err)
-							continue
-						}
-
-						nodeListStore.Mutex.Lock()
-						nodeListStore.Items[*node.Metadata.Name] = deleteAfter
-						nodeListStore.Mutex.Unlock()
-
-						nodeAddedTotals.With(prometheus.Labels{"name": *node.Metadata.Name}).Inc()
-
-						fmt.Printf("[%s] node added to the store\n", *node.Metadata.Name)
-					} else if *event.Type == k8s.EventDeleted {
-						deletedNodeName := *node.Metadata.Name
-
-						nodeListStore.Mutex.Lock()
-						delete(nodeListStore.Items, *node.Metadata.Name)
-						nodeListStore.Mutex.Unlock()
-
-						nodeDeletedTotals.With(prometheus.Labels{"name": deletedNodeName}).Inc()
-						fmt.Printf("[%s] node deleted from the store", deletedNodeName)
-					}
-				}
-			}
-
-			// sleep random time between 22 and 37 seconds
-			sleepTime := ApplyJitter(30)
-			fmt.Printf("Sleeping for %v seconds...\n", sleepTime)
-			time.Sleep(time.Duration(sleepTime) * time.Second)
-		}
-	}()
-
-	// loop and wait 1 minute before checking if a node should be killed
-	for {
-		now := time.Now()
-
-		defer nodeListStore.Mutex.Unlock()
-		nodeListStore.Mutex.Lock()
-
-		for nodeName, deleteAfter := range nodeListStore.Items {
-			timeDiff := deleteAfter.Sub(now).Minutes()
-			fmt.Printf("[%s] Time diff: %f\n", nodeName, timeDiff)
-
-			if timeDiff < 0 {
-				fmt.Printf("[%s] Deleting node...\n", nodeName)
-
-				// set node unschedulable
-				err = kubernetes.SetSchedulableState(nodeName, false)
-				if err != nil {
-					err = fmt.Errorf("Error setting schedulable state to node %s: %v", nodeName, err)
-					continue
-				}
-
-				projectId, zone, err := kubernetes.GetProjectIdAndZoneFromNode(nodeName)
-
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				gcloud, err := NewGCloudClient(projectId, zone)
-
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				// delete kubernetes node
-				err = kubernetes.DeleteNode(nodeName)
-				if err != nil {
-					log.Fatalf("Error deleting kubernetes node %s: %v\n", nodeName, err)
-				}
-
-				// delete gcloud instance
-				err = gcloud.DeleteNode(nodeName)
-
-				if err != nil {
-					log.Fatalf("Error deleting gcloud instance %s: %v\n", nodeName, err)
-				}
-
-				fmt.Printf("[%s] Deleted\n", nodeName)
+				log.Printf("[%s] Error while processing node: %v\n", *node.Metadata.Name, err)
+				safeQuit = true
 				continue
 			}
-
-			fmt.Printf("[%s] Keeping node\n", nodeName)
+			safeQuit = true
 		}
-		nodeListStore.Mutex.Unlock()
 
-		time.Sleep(60 * time.Second)
+		log.Printf("Sleeping for %v seconds...\n", sleepTime)
+		time.Sleep(time.Duration(sleepTime) * time.Second)
 	}
 }
 
+// gracefulShutdown serve endpoint to graceful stop the application :8080/quit
+func gracefulShutdown() {
+	http.HandleFunc("/quit", func(w http.ResponseWriter, r *http.Request) {
+		defer os.Exit(0)
+
+		// Wait for all processes to finish (pod/node deletion)
+		done := make(chan bool)
+		go func() {
+			for {
+				if safeQuit {
+					done <- true
+					break
+				}
+			}
+		}()
+
+		select {
+		case <-done:
+			log.Println("Quitting...")
+			break
+		case <-time.After(time.Duration(*gracefulShutdownTimeout) * time.Second):
+			log.Println("Reached graceful shutdown timeout, quitting now")
+		}
+
+		w.Write([]byte("Quit"))
+	})
+
+	log.Fatal(http.ListenAndServe(*gracefulShutdownAddr, nil))
+}
+
 // processNode returns the time to delete a node after n minutes
-func processNode(k *Kubernetes, node *apiv1.Node) (deleteAfter time.Time, err error) {
+func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
+	var deleteAfter time.Time
 	var keyExist bool = false
 
-	fmt.Printf("[%s] Processing\n", *node.Metadata.Name)
-
+	// parse node annotation if it exist
 	for key, value := range node.Metadata.Annotations {
 		if key == annotationGKEPreemptibleKillerDeleteAfter {
-			deleteAfter, err = time.Parse("2006-01-02 15:04:05 -0700 MST", value)
+			deleteAfter, err = time.Parse(time.RFC3339, value)
 
 			if err != nil {
-				err = fmt.Errorf("Error parsing metadata %s with value '%s':\n%v", annotationGKEPreemptibleKillerDeleteAfter, deleteAfter, err)
+				err = fmt.Errorf("[%s] Error parsing metadata %s with value '%s':\n%v", *node.Metadata.Name,
+					annotationGKEPreemptibleKillerDeleteAfter, deleteAfter, err)
 				return
 			}
 			keyExist = true
@@ -214,19 +163,80 @@ func processNode(k *Kubernetes, node *apiv1.Node) (deleteAfter time.Time, err er
 		}
 	}
 
+	// add the annotation if it doesn't exit
 	if !keyExist {
 		t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0)
-		deleteAfter = t.Add(24*time.Hour - time.Duration(rand.Int63n(24-12))*time.Hour).UTC()
+		deleteAfter = t.Add(24*time.Hour - time.Duration(*DrainNodeTimeout)*time.Second - time.Duration(rand.Int63n(24-12))*time.Hour).UTC()
 
-		fmt.Printf("[%s] Annotation not found, adding %s to %s\n", *node.Metadata.Name, annotationGKEPreemptibleKillerDeleteAfter, deleteAfter)
+		log.Printf("[%s] Annotation not found, adding %s to %s\n", *node.Metadata.Name,
+			annotationGKEPreemptibleKillerDeleteAfter, deleteAfter)
 
-		err = k.SetNodeAnnotation(node, annotationGKEPreemptibleKillerDeleteAfter, deleteAfter.String())
+		err = k.SetNodeAnnotation(node, annotationGKEPreemptibleKillerDeleteAfter, deleteAfter.Format(time.RFC3339))
 
 		if err != nil {
-			err = fmt.Errorf("Error updating node %s metadata: %v", *node.Metadata.Name, err)
+			err = fmt.Errorf("[%s] Error updating node metadata: %v, continuing with node CreationTimestamp value instead",
+				*node.Metadata.Name, err)
+		}
+
+		nodeAddedTotals.With(prometheus.Labels{"name": *node.Metadata.Name}).Inc()
+	}
+
+	// compute time difference
+	now := time.Now().UTC()
+	timeDiff := deleteAfter.Sub(now).Minutes()
+
+	// check if we need to delete the node or not
+	if timeDiff < 0 {
+		log.Printf("[%s] Time diff %f < 0, deleting node...\n", *node.Metadata.Name, timeDiff)
+
+		// set node unschedulable
+		err = k.SetUnschedulableState(*node.Metadata.Name, true)
+		if err != nil {
+			err = fmt.Errorf("[%s] Error setting node to unschedulable state: %v\n", *node.Metadata.Name, err)
 			return
 		}
+
+		var projectId string
+		var zone string
+		projectId, zone, err = k.GetProjectIdAndZoneFromNode(*node.Metadata.Name)
+
+		if err != nil {
+			err = fmt.Errorf("[%s] Error getting project id and zone from node: %v\n", *node.Metadata.Name, err)
+			return
+		}
+
+		var gcloud *GCloud
+		gcloud, err = NewGCloudClient(projectId, zone)
+
+		if err != nil {
+			err = fmt.Errorf("[%s] Error creating GCloud client: %v\n", *node.Metadata.Name, err)
+			return
+		}
+
+		// drain kubernetes node
+		err = k.DrainNode(*node.Metadata.Name)
+
+		if err != nil {
+			err = fmt.Errorf("[%s] Error deleting kubernetes node: %v\n", *node.Metadata.Name, err)
+			return
+		}
+
+		// delete gcloud instance
+		err = gcloud.DeleteNode(*node.Metadata.Name)
+
+		if err != nil {
+			err = fmt.Errorf("[%s] Error deleting GCloud instance: %v\n", *node.Metadata.Name, err)
+			return
+		}
+
+		nodeDeletedTotals.With(prometheus.Labels{"name": *node.Metadata.Name}).Inc()
+
+		log.Printf("[%s] Node deleted\n", *node.Metadata.Name)
+
+		return
 	}
+
+	log.Printf("[%s] Time diff %f, keeping node\n", *node.Metadata.Name, timeDiff)
 
 	return
 }
