@@ -42,13 +42,6 @@ spec:
       containers:
       - name: ${APP_NAME}
         image: estafette/estafette-gke-preemptible-killer:${GO_PIPELINE_LABEL}
-        env:
-        - name: "GOOGLE_PROJECT_ID"
-          value: "${GOOGLE_PROJECT_ID}"
-        - name: "GOOGLE_INSTANCE_ZONE"
-          value: "${GOOGLE_INSTANCE_ZONE}"
-        - name: "NODE_POOL"
-          value: "${NODE_POOL}"
         resources:
           requests:
             cpu: ${CPU_REQUEST}
