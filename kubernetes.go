@@ -122,8 +122,6 @@ func filterOutPodByOwnerReferenceKind(podList []*apiv1.Pod, kind string) (output
 		}
 	}
 
-	fmt.Printf("\n\n%v\n\n", output)
-
 	return
 }
 
@@ -135,12 +133,12 @@ func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 
 	podList, err := k.Client.CoreV1().ListPods(context.Background(), k8s.AllNamespaces, fieldSelector)
 
-	// Filter out DaemonSet from the list of pods
-	filteredPodList := filterOutPodByOwnerReferenceKind(podList.Items, "DaemonSet")
-
 	if err != nil {
 		return
 	}
+
+	// Filter out DaemonSet from the list of pods
+	filteredPodList := filterOutPodByOwnerReferenceKind(podList.Items, "DaemonSet")
 
 	Logger.Info().
 		Str("host", name).
