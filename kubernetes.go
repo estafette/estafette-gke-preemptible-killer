@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -32,14 +31,14 @@ func NewKubernetesClient(host string, port string, namespace string, kubeConfigP
 		k8sClient, err = k8s.NewInClusterClient()
 
 		if err != nil {
-			err = fmt.Errorf("Error loading incluster client: %v", err)
+			err = fmt.Errorf("Error loading incluster client:\n%v", err)
 			return
 		}
 	} else if len(kubeConfigPath) > 0 {
 		k8sClient, err = loadK8sClient(kubeConfigPath)
 
 		if err != nil {
-			err = fmt.Errorf("Error loading client using kubeconfig: %v", err)
+			err = fmt.Errorf("Error loading client using kubeconfig:\n%v", err)
 			return
 		}
 	} else {
@@ -103,7 +102,7 @@ func (k *Kubernetes) SetUnschedulableState(name string, unschedulable bool) (err
 	node, err := k.GetNode(name)
 
 	if err != nil {
-		err = fmt.Errorf("[%s] Error getting node information before setting unschedulable state:", name, err)
+		err = fmt.Errorf("Error getting node information before setting unschedulable state:\n%v", err)
 		return
 	}
 
@@ -123,12 +122,14 @@ func filterOutPodByOwnerReferenceKind(podList []*apiv1.Pod, kind string) (output
 		}
 	}
 
+	fmt.Printf("\n\n%v\n\n", output)
+
 	return
 }
 
 // DrainNode delete every pods from a given node and wait that all pods are removed before it succeed
 // it make sure we don't select DaemonSet as, they are not subject to unschedulable state
-func (k *Kubernetes) DrainNode(name string) (err error) {
+func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 	// Select all pods sitting on the node except the one from kube-system
 	fieldSelector := k8s.QueryParam("fieldSelector", "spec.nodeName="+name+",metadata.namespace!=kube-system")
 
@@ -141,17 +142,24 @@ func (k *Kubernetes) DrainNode(name string) (err error) {
 		return
 	}
 
-	log.Printf("[%s] %d pod(s) found", name, len(filteredPodList))
+	Logger.Info().
+		Str("host", name).
+		Msgf("%d pod(s) found", len(filteredPodList))
 
-	for _, pod := range podList.Items {
+	for _, pod := range filteredPodList {
+		Logger.Info().
+			Str("host", name).
+			Msgf("Deleting pod %s", *pod.Metadata.Name)
+
 		err = k.Client.CoreV1().DeletePod(context.Background(), *pod.Metadata.Name, *pod.Metadata.Namespace)
 
 		if err != nil {
-			log.Printf("[%s] Error draining pod %s", name, *pod.Metadata.Name)
+			Logger.Error().
+				Err(err).
+				Str("host", name).
+				Msgf("Error draining pod %s", *pod.Metadata.Name)
 			continue
 		}
-
-		log.Printf("[%s] Deleting pod %s", name, *pod.Metadata.Name)
 	}
 
 	doneDraining := make(chan bool)
@@ -164,7 +172,11 @@ func (k *Kubernetes) DrainNode(name string) (err error) {
 			pendingPodList, err := k.Client.CoreV1().ListPods(context.Background(), k8s.AllNamespaces, fieldSelector)
 
 			if err != nil {
-				log.Printf("[%s] Error getting list of pods, sleeping %ds", name, sleepTime)
+				Logger.Error().
+					Err(err).
+					Str("host", name).
+					Msgf("Error getting list of pods, sleeping %ds", sleepTime)
+
 				time.Sleep(sleepDuration)
 				continue
 			}
@@ -178,7 +190,10 @@ func (k *Kubernetes) DrainNode(name string) (err error) {
 				return
 			}
 
-			log.Printf("[%s] %d pod(s) pending deletion, sleeping %ds", name, podsPending, sleepTime)
+			Logger.Info().
+				Str("host", name).
+				Msgf("%d pod(s) pending deletion, sleeping %ds", podsPending, sleepTime)
+
 			time.Sleep(sleepDuration)
 		}
 	}()
@@ -186,12 +201,16 @@ func (k *Kubernetes) DrainNode(name string) (err error) {
 	select {
 	case <-doneDraining:
 		break
-	case <-time.After(time.Duration(*DrainNodeTimeout) * time.Second):
-		log.Printf("[%s] Draining node timeout reached", name)
+	case <-time.After(time.Duration(drainTimeout) * time.Second):
+		Logger.Warn().
+			Str("host", name).
+			Msg("Draining node timeout reached")
 		return
 	}
 
-	log.Printf("[%s] Done draining node", name)
+	Logger.Info().
+		Str("host", name).
+		Msg("Done draining node")
 
 	return
 }
@@ -201,13 +220,13 @@ func (k *Kubernetes) DrainNode(name string) (err error) {
 func loadK8sClient(kubeconfigPath string) (*k8s.Client, error) {
 	data, err := ioutil.ReadFile(kubeconfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("Read kubeconfig error: %v", err)
+		return nil, fmt.Errorf("Read kubeconfig error:\n%v", err)
 	}
 
 	// Unmarshal YAML into a Kubernetes config object.
 	var config k8s.Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("Unmarshal kubeconfig error: %v", err)
+		return nil, fmt.Errorf("Unmarshal kubeconfig error:\n%v", err)
 	}
 
 	// fmt.Printf("%#v", config)

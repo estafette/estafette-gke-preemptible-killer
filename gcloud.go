@@ -32,7 +32,7 @@ func NewGCloudClient(projectId string, zone string) (gcloud *GCloud, err error) 
 	client, err := google.DefaultClient(gcloud.Context, compute.ComputeScope)
 
 	if err != nil {
-		err = fmt.Errorf("Error creating compute client: %v", err)
+		err = fmt.Errorf("Error creating compute client:\n%v", err)
 		return
 	}
 
@@ -41,7 +41,7 @@ func NewGCloudClient(projectId string, zone string) (gcloud *GCloud, err error) 
 	service, err := compute.New(client)
 
 	if err != nil {
-		err = fmt.Errorf("Error creating compute service: %v", err)
+		err = fmt.Errorf("Error creating compute service:\n%v", err)
 		return
 	}
 

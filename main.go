@@ -1,27 +1,45 @@
 package main
 
 import (
-	"flag"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
+	"sync"
+	"syscall"
 	"time"
 
+	"github.com/alecthomas/kingpin"
+	"github.com/rs/zerolog"
+
 	apiv1 "github.com/ericchiang/k8s/api/v1"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// annotationGKEPreemptibleKillerDeleteAfter is the key of the annotation to use to store the time to kill
+const annotationGKEPreemptibleKillerDeleteAfter string = "estafette.io/gke-preemptible-killer-delete-after-n-minutes"
+
 var (
 	// flags
-	DrainNodeTimeout        = flag.Int("drain-node-timeout", 300, " Max time in second to wait before deleting a node.")
-	gracefulShutdownAddr    = flag.String("shutdown-listen-address", ":8080", "The address to listen on for graceful shutdown.")
-	gracefulShutdownTimeout = flag.Int("shutdown-timeout", 120, "Max time in second to wait before shutting down the application.")
-	prometheusAddr          = flag.String("prometheus-listen-address", ":9101", "The address to listen on for HTTP requests.")
-	watchInterval           = flag.Int("watch-interval", 120, "Time in second to wait between each node check.")
+	drainTimeout = kingpin.Flag("drain-timeout", "Max time in second to wait before deleting a node.").
+			Default("300").
+			Int()
+	prometheusAddress = kingpin.Flag("metrics-listen-address", "The address to listen on for Prometheus metrics requests.").
+				Default(":9001").
+				String()
+	prometheusMetricsPath = kingpin.Flag("metrics-path", "The path to listen for Prometheus metrics requests.").
+				Default("/metrics").
+				String()
+	interval = kingpin.Flag("interval", "Time in second to wait between each node check.").
+			Default("120").
+			Short('i').
+			Int()
+	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
+			String()
 
 	// define prometheus counter
 	nodeAddedTotals = prometheus.NewCounterVec(
@@ -39,9 +57,6 @@ var (
 		[]string{"name"},
 	)
 
-	// safeQuit should be set to true if no process are pending (pod/node deletion in progress)
-	safeQuit bool = true
-
 	// application version
 	version   string
 	branch    string
@@ -50,8 +65,12 @@ var (
 	goVersion = runtime.Version()
 )
 
-// annotationGKEPreemptibleKillerDeleteAfter is the key of the annotation to use to store the time to kill
-const annotationGKEPreemptibleKillerDeleteAfter string = "estafette.io/gke-preemptible-killer-delete-after-n-minutes"
+// Logger is a global logger
+var Logger = zerolog.New(os.Stdout).With().
+	Timestamp().
+	Str("app", "estafette-gke-preemptible-killer").
+	Str("version", version).
+	Logger()
 
 func init() {
 	// Metrics have to be registered to be exposed:
@@ -60,87 +79,96 @@ func init() {
 }
 
 func main() {
-	fmt.Printf("Starting estafette-gke-preemptible-killer (version=%v, branch=%v, revision=%v, buildDate=%v, goVersion=%v)\n",
-		version, branch, revision, buildDate, goVersion)
+	kingpin.Parse()
+
+	// log startup message
+	Logger.Info().
+		Str("branch", branch).
+		Str("revision", revision).
+		Str("buildDate", buildDate).
+		Str("goVersion", goVersion).
+		Msg("Starting estafette-gke-preemptible-killer...")
 
 	kubernetes, err := NewKubernetesClient(os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT"),
-		os.Getenv("KUBERNETES_NAMESPACE"), os.Getenv("KUBECONFIG"))
+		os.Getenv("KUBERNETES_NAMESPACE"), *kubeConfigPath)
 
 	if err != nil {
-		log.Fatal(err)
+		Logger.Fatal().Err(err).Msg("Error initializing Kubernetes client")
 	}
 
 	// start prometheus
 	go func() {
-		log.Println("Start serving Prometheus metrics at :9101/metrics...")
-		http.Handle("/metrics", promhttp.Handler())
-		log.Fatal(http.ListenAndServe(*prometheusAddr, nil))
+		Logger.Info().
+			Str("port", *prometheusAddress).
+			Str("path", *prometheusMetricsPath).
+			Msg("Serving Prometheus metrics...")
+
+		http.Handle(*prometheusMetricsPath, promhttp.Handler())
+
+		if err := http.ListenAndServe(*prometheusAddress, nil); err != nil {
+			Logger.Fatal().Err(err).Msg("Starting Prometheus listener failed")
+		}
 	}()
 
-	// gracefull shutdown of the application
-	go gracefulShutdown()
+	// define channels used to gracefully shutdown the application
+	var gracefulShutdown = make(chan os.Signal)
+	var shutdown = make(chan bool)
+
+	signal.Notify(gracefulShutdown, syscall.SIGTERM, syscall.SIGINT)
+
+	waitGroup := &sync.WaitGroup{}
+	waitGroup.Add(1)
 
 	// process nodes
-	for {
-		log.Printf("Processing nodes")
+	go func(shutdown chan bool, waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		for {
+			Logger.Info().Msg("Processing nodes")
 
-		sleepTime := ApplyJitter(*watchInterval)
+			sleepTime := ApplyJitter(*interval)
 
-		nodes, err := kubernetes.GetPreemptibleNodes()
-
-		if err != nil {
-			log.Printf("Error while getting the list of preemptible nodes: %v\n", err)
-			log.Printf("Sleeping for %v seconds...\n", sleepTime)
-			time.Sleep(time.Duration(sleepTime) * time.Second)
-			continue
-		}
-
-		for _, node := range nodes.Items {
-			// specify to the gracefulShutdown that we cannot quit until it finish
-			safeQuit = false
-			err := processNode(kubernetes, node)
+			nodes, err := kubernetes.GetPreemptibleNodes()
 
 			if err != nil {
-				log.Printf("[%s] Error while processing node: %v\n", *node.Metadata.Name, err)
-				safeQuit = true
+				Logger.Error().Err(err).Msg("Error while getting the list of preemptible nodes")
+
+				Logger.Info().Msgf("Sleeping for %v seconds...", sleepTime)
+				time.Sleep(time.Duration(sleepTime) * time.Second)
 				continue
 			}
-			safeQuit = true
-		}
 
-		log.Printf("Sleeping for %v seconds...\n", sleepTime)
-		time.Sleep(time.Duration(sleepTime) * time.Second)
-	}
-}
+			for _, node := range nodes.Items {
+				// run process until shutdown is requested via SIGTERM and SIGINT
+				select {
+				case _ = <-shutdown:
+					return
+				default:
+				}
 
-// gracefulShutdown serve endpoint to graceful stop the application :8080/quit
-func gracefulShutdown() {
-	http.HandleFunc("/quit", func(w http.ResponseWriter, r *http.Request) {
-		defer os.Exit(0)
+				err := processNode(kubernetes, node)
 
-		// Wait for all processes to finish (pod/node deletion)
-		done := make(chan bool)
-		go func() {
-			for {
-				if safeQuit {
-					done <- true
-					break
+				if err != nil {
+					Logger.Error().
+						Err(err).
+						Str("host", *node.Metadata.Name).
+						Msg("Error while processing node")
+					continue
 				}
 			}
-		}()
 
-		select {
-		case <-done:
-			log.Println("Quitting...")
-			break
-		case <-time.After(time.Duration(*gracefulShutdownTimeout) * time.Second):
-			log.Println("Reached graceful shutdown timeout, quitting now")
+			Logger.Info().Msgf("Sleeping for %v seconds...", sleepTime)
+			time.Sleep(time.Duration(sleepTime) * time.Second)
 		}
+	}(shutdown, waitGroup)
 
-		w.Write([]byte("Quit"))
-	})
+	signalReceived := <-gracefulShutdown
+	Logger.Info().
+		Msgf("Received signal %v. Sending shutdown and waiting on goroutines...", signalReceived)
 
-	log.Fatal(http.ListenAndServe(*gracefulShutdownAddr, nil))
+	shutdown <- true
+	waitGroup.Wait()
+
+	Logger.Info().Msg("Shutting down...")
 }
 
 // processNode returns the time to delete a node after n minutes
@@ -154,7 +182,7 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 			deleteAfter, err = time.Parse(time.RFC3339, value)
 
 			if err != nil {
-				err = fmt.Errorf("[%s] Error parsing metadata %s with value '%s':\n%v", *node.Metadata.Name,
+				err = fmt.Errorf("Error parsing metadata %s with value '%s':\n%v",
 					annotationGKEPreemptibleKillerDeleteAfter, deleteAfter, err)
 				return
 			}
@@ -166,16 +194,19 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 	// add the annotation if it doesn't exit
 	if !keyExist {
 		t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0)
-		deleteAfter = t.Add(24*time.Hour - time.Duration(*DrainNodeTimeout)*time.Second - time.Duration(rand.Int63n(24-12))*time.Hour).UTC()
+		deleteAfter = t.Add(24*time.Hour - time.Duration(*drainTimeout)*time.Second - time.Duration(rand.Int63n(24-12))*time.Hour).UTC()
 
-		log.Printf("[%s] Annotation not found, adding %s to %s\n", *node.Metadata.Name,
-			annotationGKEPreemptibleKillerDeleteAfter, deleteAfter)
+		Logger.Info().
+			Str("host", *node.Metadata.Name).
+			Msgf("Annotation not found, adding %s to %s", annotationGKEPreemptibleKillerDeleteAfter, deleteAfter)
 
 		err = k.SetNodeAnnotation(node, annotationGKEPreemptibleKillerDeleteAfter, deleteAfter.Format(time.RFC3339))
 
 		if err != nil {
-			err = fmt.Errorf("[%s] Error updating node metadata: %v, continuing with node CreationTimestamp value instead",
-				*node.Metadata.Name, err)
+			Logger.Warn().
+				Err(err).
+				Str("host", *node.Metadata.Name).
+				Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
 		}
 
 		nodeAddedTotals.With(prometheus.Labels{"name": *node.Metadata.Name}).Inc()
@@ -187,12 +218,17 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 
 	// check if we need to delete the node or not
 	if timeDiff < 0 {
-		log.Printf("[%s] Time diff %f < 0, deleting node...\n", *node.Metadata.Name, timeDiff)
+		Logger.Info().
+			Str("host", *node.Metadata.Name).
+			Msgf("Time diff %f < 0, deleting node...", timeDiff)
 
 		// set node unschedulable
 		err = k.SetUnschedulableState(*node.Metadata.Name, true)
 		if err != nil {
-			err = fmt.Errorf("[%s] Error setting node to unschedulable state: %v\n", *node.Metadata.Name, err)
+			Logger.Error().
+				Err(err).
+				Str("host", *node.Metadata.Name).
+				Msg("Error setting node to unschedulable state")
 			return
 		}
 
@@ -201,7 +237,10 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 		projectId, zone, err = k.GetProjectIdAndZoneFromNode(*node.Metadata.Name)
 
 		if err != nil {
-			err = fmt.Errorf("[%s] Error getting project id and zone from node: %v\n", *node.Metadata.Name, err)
+			Logger.Error().
+				Err(err).
+				Str("host", *node.Metadata.Name).
+				Msg("Error getting project id and zone from node")
 			return
 		}
 
@@ -209,15 +248,21 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 		gcloud, err = NewGCloudClient(projectId, zone)
 
 		if err != nil {
-			err = fmt.Errorf("[%s] Error creating GCloud client: %v\n", *node.Metadata.Name, err)
+			Logger.Error().
+				Err(err).
+				Str("host", *node.Metadata.Name).
+				Msg("Error creating GCloud client")
 			return
 		}
 
 		// drain kubernetes node
-		err = k.DrainNode(*node.Metadata.Name)
+		err = k.DrainNode(*node.Metadata.Name, *drainTimeout)
 
 		if err != nil {
-			err = fmt.Errorf("[%s] Error deleting kubernetes node: %v\n", *node.Metadata.Name, err)
+			Logger.Error().
+				Err(err).
+				Str("host", *node.Metadata.Name).
+				Msg("Error deleting kubernetes node")
 			return
 		}
 
@@ -225,18 +270,25 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 		err = gcloud.DeleteNode(*node.Metadata.Name)
 
 		if err != nil {
-			err = fmt.Errorf("[%s] Error deleting GCloud instance: %v\n", *node.Metadata.Name, err)
+			Logger.Error().
+				Err(err).
+				Str("host", *node.Metadata.Name).
+				Msg("Error deleting GCloud instance")
 			return
 		}
 
 		nodeDeletedTotals.With(prometheus.Labels{"name": *node.Metadata.Name}).Inc()
 
-		log.Printf("[%s] Node deleted\n", *node.Metadata.Name)
+		Logger.Info().
+			Str("host", *node.Metadata.Name).
+			Msg("Node deleted")
 
 		return
 	}
 
-	log.Printf("[%s] Time diff %f, keeping node\n", *node.Metadata.Name, timeDiff)
+	Logger.Info().
+		Str("host", *node.Metadata.Name).
+		Msgf("Time diff %f, keeping node", timeDiff)
 
 	return
 }
