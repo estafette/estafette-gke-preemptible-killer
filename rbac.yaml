@@ -9,12 +9,17 @@ rules:
   resources:
   - nodes
   verbs:
-  - delete
   - get
   - list
   - patch
   - update
-  - watch
+- apiGroups: [""] # "" indicates the core API group
+  resources:
+  - pods
+  verbs:
+  - delete
+  - get
+  - list
 ---
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding

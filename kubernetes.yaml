@@ -36,7 +36,7 @@ spec:
         version: ${VERSION}
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9101"
+        prometheus.io/port: "9001"
     spec:
       serviceAccount: ${APP_NAME}
       containers:
@@ -59,6 +59,6 @@ spec:
         livenessProbe:
           httpGet:
             path: /metrics
-            port: 9101
+            port: 9001
           initialDelaySeconds: 30
           timeoutSeconds: 1

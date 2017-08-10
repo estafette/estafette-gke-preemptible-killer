@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ericchiang/k8s"
 	apiv1 "github.com/ericchiang/k8s/api/v1"
@@ -17,12 +18,9 @@ type Kubernetes struct {
 }
 
 type KubernetesClient interface {
-	DeleteNode(string)
 	GetPreemptibleNodes() (*apiv1.NodeList, error)
-	PreemptibleNodeLabel() k8s.Option
 	SetNodeAnnotation(*apiv1.Node, string, string) (*apiv1.Node, error)
 	SetSchedulableState(*apiv1.Node, bool) (*apiv1.Node, error)
-	WatchPreemptibleNodes() (*k8s.CoreV1NodeWatcher, error)
 }
 
 // NewKubernetesClient return a Kubernetes client
@@ -33,14 +31,14 @@ func NewKubernetesClient(host string, port string, namespace string, kubeConfigP
 		k8sClient, err = k8s.NewInClusterClient()
 
 		if err != nil {
-			err = fmt.Errorf("Error loading incluster client: %v", err)
+			err = fmt.Errorf("Error loading incluster client:\n%v", err)
 			return
 		}
 	} else if len(kubeConfigPath) > 0 {
 		k8sClient, err = loadK8sClient(kubeConfigPath)
 
 		if err != nil {
-			err = fmt.Errorf("Error loading client using kubeconfig: %v", err)
+			err = fmt.Errorf("Error loading client using kubeconfig:\n%v", err)
 			return
 		}
 	} else {
@@ -78,16 +76,11 @@ func (k *Kubernetes) GetProjectIdAndZoneFromNode(name string) (projectId string,
 	return
 }
 
-// PreemptibleNodeLabel return a labels selector for a preemptible node pool
-func (k *Kubernetes) PreemptibleNodeLabel() k8s.Option {
+// GetPreemptibleNodes return a list of preemptible node
+func (k *Kubernetes) GetPreemptibleNodes() (nodes *apiv1.NodeList, err error) {
 	labels := new(k8s.LabelSelector)
 	labels.Eq("cloud.google.com/gke-preemptible", "true")
-	return labels.Selector()
-}
-
-// GetPreemptibleNodes return a list of preemptible node from a given node pool name
-func (k *Kubernetes) GetPreemptibleNodes() (nodes *apiv1.NodeList, err error) {
-	nodes, err = k.Client.CoreV1().ListNodes(context.Background(), k.PreemptibleNodeLabel())
+	nodes, err = k.Client.CoreV1().ListNodes(context.Background(), labels.Selector())
 	return
 }
 
@@ -98,29 +91,125 @@ func (k *Kubernetes) GetNode(name string) (node *apiv1.Node, err error) {
 }
 
 // SetNodeAnnotation add an annotation (key/value) to a given node
-func (k *Kubernetes) SetNodeAnnotation(node *apiv1.Node, annotationKey string, annotationValue string) (err error) {
-	node.Metadata.Annotations[annotationKey] = annotationValue
+func (k *Kubernetes) SetNodeAnnotation(node *apiv1.Node, key string, value string) (err error) {
+	node.Metadata.Annotations[key] = value
 	_, err = k.Client.CoreV1().UpdateNode(context.Background(), node)
 	return
 }
 
-// SetSchedulableState set the schedulable state of a given node
-func (k *Kubernetes) SetSchedulableState(name string, schedulable bool) (err error) {
+// SetUnschedulableState set the unschedulable state of a given node
+func (k *Kubernetes) SetUnschedulableState(name string, unschedulable bool) (err error) {
 	node, err := k.GetNode(name)
-	node.Spec.Unschedulable = &schedulable
+
+	if err != nil {
+		err = fmt.Errorf("Error getting node information before setting unschedulable state:\n%v", err)
+		return
+	}
+
+	node.Spec.Unschedulable = &unschedulable
+
 	_, err = k.Client.CoreV1().UpdateNode(context.Background(), node)
 	return
 }
 
-// DeleteNode delete a node from a given name
-func (k *Kubernetes) DeleteNode(name string) (err error) {
-	err = k.Client.CoreV1().DeleteNode(context.Background(), name)
+// filterOutPodByOwnerReferenceKind filter out a list of pods by its owner references kind
+func filterOutPodByOwnerReferenceKind(podList []*apiv1.Pod, kind string) (output []*apiv1.Pod) {
+	for _, pod := range podList {
+		for _, ownerReference := range pod.Metadata.OwnerReferences {
+			if *ownerReference.Kind != kind {
+				output = append(output, pod)
+			}
+		}
+	}
+
 	return
 }
 
-// WatchNodes watch for updated preemptible node from a given node pool
-func (k *Kubernetes) WatchPreemptibleNodes() (watcher *k8s.CoreV1NodeWatcher, err error) {
-	watcher, err = k.Client.CoreV1().WatchNodes(context.Background(), k.PreemptibleNodeLabel())
+// DrainNode delete every pods from a given node and wait that all pods are removed before it succeed
+// it make sure we don't select DaemonSet as, they are not subject to unschedulable state
+func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
+	// Select all pods sitting on the node except the one from kube-system
+	fieldSelector := k8s.QueryParam("fieldSelector", "spec.nodeName="+name+",metadata.namespace!=kube-system")
+
+	podList, err := k.Client.CoreV1().ListPods(context.Background(), k8s.AllNamespaces, fieldSelector)
+
+	if err != nil {
+		return
+	}
+
+	// Filter out DaemonSet from the list of pods
+	filteredPodList := filterOutPodByOwnerReferenceKind(podList.Items, "DaemonSet")
+
+	Logger.Info().
+		Str("host", name).
+		Msgf("%d pod(s) found", len(filteredPodList))
+
+	for _, pod := range filteredPodList {
+		Logger.Info().
+			Str("host", name).
+			Msgf("Deleting pod %s", *pod.Metadata.Name)
+
+		err = k.Client.CoreV1().DeletePod(context.Background(), *pod.Metadata.Name, *pod.Metadata.Namespace)
+
+		if err != nil {
+			Logger.Error().
+				Err(err).
+				Str("host", name).
+				Msgf("Error draining pod %s", *pod.Metadata.Name)
+			continue
+		}
+	}
+
+	doneDraining := make(chan bool)
+
+	// Wait until all pods are deleted
+	go func() {
+		for {
+			sleepTime := ApplyJitter(10)
+			sleepDuration := time.Duration(sleepTime) * time.Second
+			pendingPodList, err := k.Client.CoreV1().ListPods(context.Background(), k8s.AllNamespaces, fieldSelector)
+
+			if err != nil {
+				Logger.Error().
+					Err(err).
+					Str("host", name).
+					Msgf("Error getting list of pods, sleeping %ds", sleepTime)
+
+				time.Sleep(sleepDuration)
+				continue
+			}
+
+			// Filter out DaemonSet from the list of pods
+			filteredPendingPodList := filterOutPodByOwnerReferenceKind(pendingPodList.Items, "DaemonSet")
+			podsPending := len(filteredPendingPodList)
+
+			if podsPending == 0 {
+				doneDraining <- true
+				return
+			}
+
+			Logger.Info().
+				Str("host", name).
+				Msgf("%d pod(s) pending deletion, sleeping %ds", podsPending, sleepTime)
+
+			time.Sleep(sleepDuration)
+		}
+	}()
+
+	select {
+	case <-doneDraining:
+		break
+	case <-time.After(time.Duration(drainTimeout) * time.Second):
+		Logger.Warn().
+			Str("host", name).
+			Msg("Draining node timeout reached")
+		return
+	}
+
+	Logger.Info().
+		Str("host", name).
+		Msg("Done draining node")
+
 	return
 }
 
@@ -129,13 +218,13 @@ func (k *Kubernetes) WatchPreemptibleNodes() (watcher *k8s.CoreV1NodeWatcher, er
 func loadK8sClient(kubeconfigPath string) (*k8s.Client, error) {
 	data, err := ioutil.ReadFile(kubeconfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("Read kubeconfig error: %v", err)
+		return nil, fmt.Errorf("Read kubeconfig error:\n%v", err)
 	}
 
 	// Unmarshal YAML into a Kubernetes config object.
 	var config k8s.Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("Unmarshal kubeconfig error: %v", err)
+		return nil, fmt.Errorf("Unmarshal kubeconfig error:\n%v", err)
 	}
 
 	// fmt.Printf("%#v", config)
