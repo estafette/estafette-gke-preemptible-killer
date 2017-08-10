@@ -26,13 +26,13 @@ deleted on GCloud.
 
 You can either use environment variables or flags to configure the following settings:
 
-| Environment variable  | Flag                     | Default Value | Description
-| --------------------- | ------------------------ | ------------- | -----------------------------------------------------------------
-| DRAIN_TIMEOUT         | --drain-timeout          | 300           | Max time in second to wait before deleting a node
-| INTERVAL              | --interval (-i)          | 120           | Time in second to wait between each node check
-| KUBECONFIG            | --kubeconfig             |               | Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution
-| METRICS_LISTEN_ADDRES | --metrics-listen-address | :9001         | The address to listen on for Prometheus metrics requests
-| METRICS_PATH          | --metrics-path           | /metrics      | The path to listen for Prometheus metrics requests
+| Environment variable   | Flag                     | Default  | Description
+| ---------------------- | ------------------------ | -------- | -----------------------------------------------------------------
+| DRAIN_TIMEOUT          | --drain-timeout          | 300      | Max time in second to wait before deleting a node
+| INTERVAL               | --interval (-i)          | 120      | Time in second to wait between each node check
+| KUBECONFIG             | --kubeconfig             |          | Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution
+| METRICS_LISTEN_ADDRESS | --metrics-listen-address | :9001    | The address to listen on for Prometheus metrics requests
+| METRICS_PATH           | --metrics-path           | /metrics | The path to listen for Prometheus metrics requests
 
 
 ### In cluster
