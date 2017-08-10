@@ -47,7 +47,7 @@ var (
 			Name: "estafette_gke_preemptible_killer_node_totals",
 			Help: "Number of processed nodes.",
 		},
-		[]string{"name"},
+		[]string{"name", "status"},
 	)
 
 	// application version
