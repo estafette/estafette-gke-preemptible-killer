@@ -42,17 +42,10 @@ var (
 			String()
 
 	// define prometheus counter
-	nodeAddedTotals = prometheus.NewCounterVec(
+	nodeTotals = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "estafette_gke_preemptible_killer_node_added_totals",
-			Help: "Number of added nodes.",
-		},
-		[]string{"name"},
-	)
-	nodeDeletedTotals = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "estafette_gke_preemptible_killer_node_deleted_totals",
-			Help: "Number of deleted nodes.",
+			Name: "estafette_gke_preemptible_killer_node_totals",
+			Help: "Number of processed nodes.",
 		},
 		[]string{"name"},
 	)
@@ -74,12 +67,14 @@ var Logger = zerolog.New(os.Stdout).With().
 
 func init() {
 	// Metrics have to be registered to be exposed:
-	prometheus.MustRegister(nodeAddedTotals)
-	prometheus.MustRegister(nodeDeletedTotals)
+	prometheus.MustRegister(nodeTotals)
 }
 
 func main() {
 	kingpin.Parse()
+
+	// log as severity for stackdriver logging to recognize the level
+	zerolog.LevelFieldName = "severity"
 
 	// log startup message
 	Logger.Info().
@@ -130,6 +125,12 @@ func main() {
 			nodes, err := kubernetes.GetPreemptibleNodes()
 
 			if err != nil {
+				// run process until shutdown is requested via SIGTERM and SIGINT
+				select {
+				case _ = <-shutdown:
+					return
+				default:
+				}
 				Logger.Error().Err(err).Msg("Error while getting the list of preemptible nodes")
 
 				Logger.Info().Msgf("Sleeping for %v seconds...", sleepTime)
@@ -148,6 +149,7 @@ func main() {
 				err := processNode(kubernetes, node)
 
 				if err != nil {
+					nodeTotals.With(prometheus.Labels{"name": *node.Metadata.Name, "status": "failed"}).Inc()
 					Logger.Error().
 						Err(err).
 						Str("host", *node.Metadata.Name).
@@ -209,7 +211,7 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 				Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
 		}
 
-		nodeAddedTotals.With(prometheus.Labels{"name": *node.Metadata.Name}).Inc()
+		nodeTotals.With(prometheus.Labels{"name": *node.Metadata.Name, "status": "annotated"}).Inc()
 	}
 
 	// compute time difference
@@ -277,7 +279,7 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 			return
 		}
 
-		nodeDeletedTotals.With(prometheus.Labels{"name": *node.Metadata.Name}).Inc()
+		nodeTotals.With(prometheus.Labels{"name": *node.Metadata.Name, "status": "killed"}).Inc()
 
 		Logger.Info().
 			Str("host", *node.Metadata.Name).
@@ -285,6 +287,8 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 
 		return
 	}
+
+	nodeTotals.With(prometheus.Labels{"name": *node.Metadata.Name, "status": "skipped"}).Inc()
 
 	Logger.Info().
 		Str("host", *node.Metadata.Name).
