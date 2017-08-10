@@ -47,7 +47,7 @@ var (
 			Name: "estafette_gke_preemptible_killer_node_totals",
 			Help: "Number of processed nodes.",
 		},
-		[]string{"name", "status"},
+		[]string{"status"},
 	)
 
 	// application version
@@ -149,7 +149,7 @@ func main() {
 				err := processNode(kubernetes, node)
 
 				if err != nil {
-					nodeTotals.With(prometheus.Labels{"name": *node.Metadata.Name, "status": "failed"}).Inc()
+					nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
 					Logger.Error().
 						Err(err).
 						Str("host", *node.Metadata.Name).
@@ -211,7 +211,7 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 				Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
 		}
 
-		nodeTotals.With(prometheus.Labels{"name": *node.Metadata.Name, "status": "annotated"}).Inc()
+		nodeTotals.With(prometheus.Labels{"status": "annotated"}).Inc()
 	}
 
 	// compute time difference
@@ -279,7 +279,7 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 			return
 		}
 
-		nodeTotals.With(prometheus.Labels{"name": *node.Metadata.Name, "status": "killed"}).Inc()
+		nodeTotals.With(prometheus.Labels{"status": "killed"}).Inc()
 
 		Logger.Info().
 			Str("host", *node.Metadata.Name).
@@ -288,11 +288,11 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 		return
 	}
 
-	nodeTotals.With(prometheus.Labels{"name": *node.Metadata.Name, "status": "skipped"}).Inc()
+	nodeTotals.With(prometheus.Labels{"status": "skipped"}).Inc()
 
 	Logger.Info().
 		Str("host", *node.Metadata.Name).
-		Msgf("Time diff %f, keeping node", timeDiff)
+		Msgf("%.0f minute(s) to go before kill, keeping node", timeDiff)
 
 	return
 }
