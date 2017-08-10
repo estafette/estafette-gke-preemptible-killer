@@ -35,7 +35,7 @@ var (
 				Default("/metrics").
 				String()
 	interval = kingpin.Flag("interval", "Time in second to wait between each node check.").
-			Default("120").
+			Default("600").
 			Short('i').
 			Int()
 	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
