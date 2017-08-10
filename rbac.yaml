@@ -13,6 +13,7 @@ rules:
   - list
   - patch
   - update
+  - delete
 - apiGroups: [""] # "" indicates the core API group
   resources:
   - pods

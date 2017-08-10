@@ -139,7 +139,7 @@ func filterOutPodByOwnerReferenceKind(podList []*apiv1.Pod, kind string) (output
 }
 
 // DrainNode delete every pods from a given node and wait that all pods are removed before it succeed
-// it make sure we don't select DaemonSet as, they are not subject to unschedulable state
+// it also make sure we don't select DaemonSet because they are not subject to unschedulable state
 func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 	// Select all pods sitting on the node except the one from kube-system
 	fieldSelector := k8s.QueryParam("fieldSelector", "spec.nodeName="+name+",metadata.namespace!=kube-system")
