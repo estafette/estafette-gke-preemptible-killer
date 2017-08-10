@@ -118,7 +118,7 @@ func main() {
 	go func(shutdown chan bool, waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		for {
-			Logger.Info().Msg("Processing nodes")
+			Logger.Info().Msg("Listing all preemptible nodes for cluster...")
 
 			sleepTime := ApplyJitter(*interval)
 
@@ -137,6 +137,8 @@ func main() {
 				time.Sleep(time.Duration(sleepTime) * time.Second)
 				continue
 			}
+
+			Logger.Info().Msgf("Cluster has %v preemptible nodes", len(nodes.Items))
 
 			for _, node := range nodes.Items {
 				// run process until shutdown is requested via SIGTERM and SIGINT
