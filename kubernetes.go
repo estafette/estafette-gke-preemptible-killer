@@ -18,9 +18,12 @@ type Kubernetes struct {
 }
 
 type KubernetesClient interface {
+	DrainNode(string, int) error
+	GetNode(string) (*apiv1.Node, error)
 	GetPreemptibleNodes() (*apiv1.NodeList, error)
-	SetNodeAnnotation(*apiv1.Node, string, string) (*apiv1.Node, error)
-	SetSchedulableState(*apiv1.Node, bool) (*apiv1.Node, error)
+	GetProjectIdAndZoneFromNode(string) (string, string, error)
+	SetNodeAnnotation(string, string, string) error
+	SetUnschedulableState(string, bool) error
 }
 
 // NewKubernetesClient return a Kubernetes client
@@ -90,14 +93,24 @@ func (k *Kubernetes) GetNode(name string) (node *apiv1.Node, err error) {
 	return
 }
 
-// SetNodeAnnotation add an annotation (key/value) to a given node
-func (k *Kubernetes) SetNodeAnnotation(node *apiv1.Node, key string, value string) (err error) {
-	node.Metadata.Annotations[key] = value
-	_, err = k.Client.CoreV1().UpdateNode(context.Background(), node)
+// SetNodeAnnotation add an annotation (key/value) to a node from a given node name
+// As the nodes are constantly being updated, the k8s client doesn't support patch feature yet and
+// to reduce the chance to hit a failure 409 we fetch the node before update
+func (k *Kubernetes) SetNodeAnnotation(name string, key string, value string) (err error) {
+	newNode, err := k.GetNode(name)
+
+	if err != nil {
+		err = fmt.Errorf("Error getting node information before setting annotation:\n%v", err)
+		return
+	}
+
+	newNode.Metadata.Annotations[key] = value
+
+	_, err = k.Client.CoreV1().UpdateNode(context.Background(), newNode)
 	return
 }
 
-// SetUnschedulableState set the unschedulable state of a given node
+// SetUnschedulableState set the unschedulable state of a given node name
 func (k *Kubernetes) SetUnschedulableState(name string, unschedulable bool) (err error) {
 	node, err := k.GetNode(name)
 

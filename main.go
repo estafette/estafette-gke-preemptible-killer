@@ -200,7 +200,7 @@ func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
 			Str("host", *node.Metadata.Name).
 			Msgf("Annotation not found, adding %s to %s", annotationGKEPreemptibleKillerDeleteAfter, deleteAfter)
 
-		err = k.SetNodeAnnotation(node, annotationGKEPreemptibleKillerDeleteAfter, deleteAfter.Format(time.RFC3339))
+		err = k.SetNodeAnnotation(*node.Metadata.Name, annotationGKEPreemptibleKillerDeleteAfter, deleteAfter.Format(time.RFC3339))
 
 		if err != nil {
 			Logger.Warn().

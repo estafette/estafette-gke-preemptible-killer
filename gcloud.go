@@ -18,7 +18,7 @@ type GCloud struct {
 }
 
 type GCloudClient interface {
-	DeleteNode(string) (*compute.Operation, error)
+	DeleteNode(string) error
 }
 
 // NewGCloudClient return a GCloud client
