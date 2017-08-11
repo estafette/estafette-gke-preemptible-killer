@@ -44,7 +44,7 @@ spec:
       - name: ${APP_NAME}
         image: estafette/estafette-gke-preemptible-killer:${GO_PIPELINE_LABEL}
         ports:
-        - name: prometheus-metrics
+        - name: prom-metrics
           containerPort: 9001
         resources:
           requests:
@@ -56,6 +56,6 @@ spec:
         livenessProbe:
           httpGet:
             path: /metrics
-            port: prometheus-metrics
+            port: prom-metrics
           initialDelaySeconds: 30
           timeoutSeconds: 1

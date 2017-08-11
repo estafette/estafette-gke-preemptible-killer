@@ -72,7 +72,7 @@ spec:
       - name: estafette-gke-preemptible-killer
         image: estafette/estafette-gke-preemptible-killer:latest
         ports:
-        - name: prometheus-metrics
+        - name: prom-metrics
           containerPort: 9001
         resources:
           requests:
@@ -84,7 +84,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /metrics
-            port: prometheus-metrics
+            port: prom-metrics
           initialDelaySeconds: 30
           timeoutSeconds: 1
 ```
