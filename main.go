@@ -19,8 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// annotationGKEPreemptibleKillerExpiryDatetime is the key of the annotation to use to store the expiry datetime
-const annotationGKEPreemptibleKillerExpiryDatetime string = "estafette.io/gke-preemptible-killer-expiry-datetime"
+// annotationGKEPreemptibleKillerState is the key of the annotation to use to store the expiry datetime
+const annotationGKEPreemptibleKillerState string = "estafette.io/gke-preemptible-killer-state"
 
 // GKEPreemptibleKillerState represents the state of gke-preemptible-killer
 type GKEPreemptibleKillerState struct {
@@ -183,7 +183,7 @@ func main() {
 func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 	var ok bool
 
-	state.ExpiryDatetime, ok = node.Metadata.Annotations[annotationGKEPreemptibleKillerExpiryDatetime]
+	state.ExpiryDatetime, ok = node.Metadata.Annotations[annotationGKEPreemptibleKillerState]
 
 	if !ok {
 		state.ExpiryDatetime = ""
@@ -200,9 +200,9 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 
 	Logger.Info().
 		Str("host", *node.Metadata.Name).
-		Msgf("Annotation not found, adding %s to %s", annotationGKEPreemptibleKillerExpiryDatetime, state.ExpiryDatetime)
+		Msgf("Annotation not found, adding %s to %s", annotationGKEPreemptibleKillerState, state.ExpiryDatetime)
 
-	err = k.SetNodeAnnotation(*node.Metadata.Name, annotationGKEPreemptibleKillerExpiryDatetime, state.ExpiryDatetime)
+	err = k.SetNodeAnnotation(*node.Metadata.Name, annotationGKEPreemptibleKillerState, state.ExpiryDatetime)
 
 	if err != nil {
 		Logger.Warn().
