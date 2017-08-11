@@ -29,7 +29,7 @@ You can either use environment variables or flags to configure the following set
 | Environment variable   | Flag                     | Default  | Description
 | ---------------------- | ------------------------ | -------- | -----------------------------------------------------------------
 | DRAIN_TIMEOUT          | --drain-timeout          | 300      | Max time in second to wait before deleting a node
-| INTERVAL               | --interval (-i)          | 120      | Time in second to wait between each node check
+| INTERVAL               | --interval (-i)          | 600      | Time in second to wait between each node check
 | KUBECONFIG             | --kubeconfig             |          | Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution
 | METRICS_LISTEN_ADDRESS | --metrics-listen-address | :9001    | The address to listen on for Prometheus metrics requests
 | METRICS_PATH           | --metrics-path           | /metrics | The path to listen for Prometheus metrics requests
@@ -66,9 +66,14 @@ spec:
       labels:
         app: estafette-gke-preemptible-killer
     spec:
+      serviceAccount: estafette-gke-preemptible-killer
+      terminationGracePeriodSeconds: 300
       containers:
       - name: estafette-gke-preemptible-killer
         image: estafette/estafette-gke-preemptible-killer:latest
+        ports:
+        - name: prometheus-metrics
+          containerPort: 9001
         resources:
           requests:
             cpu: 10m
@@ -79,7 +84,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /metrics
-            port: 9001
+            port: prometheus-metrics
           initialDelaySeconds: 30
           timeoutSeconds: 1
 ```
