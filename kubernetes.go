@@ -27,7 +27,7 @@ type KubernetesClient interface {
 }
 
 // NewKubernetesClient return a Kubernetes client
-func NewKubernetesClient(host string, port string, namespace string, kubeConfigPath string) (kubernetes *Kubernetes, err error) {
+func NewKubernetesClient(host string, port string, namespace string, kubeConfigPath string) (kubernetes KubernetesClient, err error) {
 	var k8sClient *k8s.Client
 
 	if len(host) > 0 && len(port) > 0 {

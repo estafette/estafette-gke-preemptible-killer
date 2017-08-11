@@ -39,9 +39,13 @@ spec:
         prometheus.io/port: "9001"
     spec:
       serviceAccount: ${APP_NAME}
+      terminationGracePeriodSeconds: 300
       containers:
       - name: ${APP_NAME}
         image: estafette/estafette-gke-preemptible-killer:${GO_PIPELINE_LABEL}
+        ports:
+        - name: prometheus-metrics
+          containerPort: 9001
         resources:
           requests:
             cpu: ${CPU_REQUEST}
@@ -52,6 +56,6 @@ spec:
         livenessProbe:
           httpGet:
             path: /metrics
-            port: 9001
+            port: prometheus-metrics
           initialDelaySeconds: 30
           timeoutSeconds: 1

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math/rand"
 	"net/http"
 	"os"
@@ -20,8 +19,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// annotationGKEPreemptibleKillerDeleteAfter is the key of the annotation to use to store the time to kill
-const annotationGKEPreemptibleKillerDeleteAfter string = "estafette.io/gke-preemptible-killer-delete-after-n-minutes"
+// annotationGKEPreemptibleKillerState is the key of the annotation to use to store the expiry datetime
+const annotationGKEPreemptibleKillerState string = "estafette.io/gke-preemptible-killer-state"
+
+// GKEPreemptibleKillerState represents the state of gke-preemptible-killer
+type GKEPreemptibleKillerState struct {
+	ExpiryDatetime string `json:"expiryDatetime"`
+}
 
 var (
 	// flags
@@ -175,56 +179,77 @@ func main() {
 	Logger.Info().Msg("Shutting down...")
 }
 
-// processNode returns the time to delete a node after n minutes
-func processNode(k *Kubernetes, node *apiv1.Node) (err error) {
-	var deleteAfter time.Time
-	var keyExist bool = false
+// getCurrentNodeState return the state of the node by reading its metadata annotations
+func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
+	var ok bool
 
-	// parse node annotation if it exist
-	for key, value := range node.Metadata.Annotations {
-		if key == annotationGKEPreemptibleKillerDeleteAfter {
-			deleteAfter, err = time.Parse(time.RFC3339, value)
+	state.ExpiryDatetime, ok = node.Metadata.Annotations[annotationGKEPreemptibleKillerState]
 
-			if err != nil {
-				err = fmt.Errorf("Error parsing metadata %s with value '%s':\n%v",
-					annotationGKEPreemptibleKillerDeleteAfter, deleteAfter, err)
-				return
-			}
-			keyExist = true
-			break
-		}
+	if !ok {
+		state.ExpiryDatetime = ""
+	}
+	return
+}
+
+// getDesiredNodeState define the state of the node, update node annotations if not present
+func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreemptibleKillerState, err error) {
+	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0)
+	expiryDatetime := t.Add(24*time.Hour - time.Duration(*drainTimeout)*time.Second - time.Duration(rand.Int63n(24-12))*time.Hour).UTC()
+
+	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
+
+	Logger.Info().
+		Str("host", *node.Metadata.Name).
+		Msgf("Annotation not found, adding %s to %s", annotationGKEPreemptibleKillerState, state.ExpiryDatetime)
+
+	err = k.SetNodeAnnotation(*node.Metadata.Name, annotationGKEPreemptibleKillerState, state.ExpiryDatetime)
+
+	if err != nil {
+		Logger.Warn().
+			Err(err).
+			Str("host", *node.Metadata.Name).
+			Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
+
+		state.ExpiryDatetime = t.UTC().Format(time.RFC3339)
+		nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
+
+		return
 	}
 
-	// add the annotation if it doesn't exit
-	if !keyExist {
-		t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0)
-		deleteAfter = t.Add(24*time.Hour - time.Duration(*drainTimeout)*time.Second - time.Duration(rand.Int63n(24-12))*time.Hour).UTC()
+	nodeTotals.With(prometheus.Labels{"status": "annotated"}).Inc()
 
-		Logger.Info().
-			Str("host", *node.Metadata.Name).
-			Msgf("Annotation not found, adding %s to %s", annotationGKEPreemptibleKillerDeleteAfter, deleteAfter)
+	return
+}
 
-		err = k.SetNodeAnnotation(*node.Metadata.Name, annotationGKEPreemptibleKillerDeleteAfter, deleteAfter.Format(time.RFC3339))
+// processNode returns the time to delete a node after n minutes
+func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
+	// get current node state
+	state := getCurrentNodeState(node)
 
-		if err != nil {
-			Logger.Warn().
-				Err(err).
-				Str("host", *node.Metadata.Name).
-				Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
-		}
-
-		nodeTotals.With(prometheus.Labels{"status": "annotated"}).Inc()
+	// set node state if doesn't already have annotations
+	if state.ExpiryDatetime == "" {
+		state, _ = getDesiredNodeState(k, node)
 	}
 
 	// compute time difference
 	now := time.Now().UTC()
-	timeDiff := deleteAfter.Sub(now).Minutes()
+	expiryDatetime, err := time.Parse(time.RFC3339, state.ExpiryDatetime)
+
+	if err != nil {
+		Logger.Error().
+			Err(err).
+			Str("host", *node.Metadata.Name).
+			Msgf("Error parsing expiry datetime with value '%s'", state.ExpiryDatetime)
+		return
+	}
+
+	timeDiff := expiryDatetime.Sub(now).Minutes()
 
 	// check if we need to delete the node or not
 	if timeDiff < 0 {
 		Logger.Info().
 			Str("host", *node.Metadata.Name).
-			Msgf("Time diff %f < 0, deleting node...", timeDiff)
+			Msgf("Node expired %.0f minute(s) ago, deleting...", timeDiff)
 
 		// set node unschedulable
 		err = k.SetUnschedulableState(*node.Metadata.Name, true)
