@@ -30,19 +30,24 @@ type GKEPreemptibleKillerState struct {
 var (
 	// flags
 	drainTimeout = kingpin.Flag("drain-timeout", "Max time in second to wait before deleting a node.").
+			Envar("DRAIN_TIMEOUT").
 			Default("300").
 			Int()
 	prometheusAddress = kingpin.Flag("metrics-listen-address", "The address to listen on for Prometheus metrics requests.").
+				Envar("METRICS_LISTEN_ADDRESS").
 				Default(":9001").
 				String()
 	prometheusMetricsPath = kingpin.Flag("metrics-path", "The path to listen for Prometheus metrics requests.").
+				Envar("METRICS_PATH").
 				Default("/metrics").
 				String()
 	interval = kingpin.Flag("interval", "Time in second to wait between each node check.").
+			Envar("INTERVAL").
 			Default("600").
 			Short('i').
 			Int()
 	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
+			Envar("KUBECONFIG").
 			String()
 
 	// define prometheus counter
