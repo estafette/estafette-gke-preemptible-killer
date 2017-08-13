@@ -11,7 +11,6 @@ import (
 
 type GCloud struct {
 	Client    *http.Client
-	Context   context.Context
 	ProjectID string
 	Service   *compute.Service
 	Zone      string
@@ -22,21 +21,13 @@ type GCloudClient interface {
 }
 
 // NewGCloudClient return a GCloud client
-func NewGCloudClient(projectId string, zone string) (gcloud *GCloud, err error) {
-	gcloud = &GCloud{
-		Context:   context.Background(),
-		ProjectID: projectId,
-		Zone:      zone,
-	}
-
-	client, err := google.DefaultClient(gcloud.Context, compute.ComputeScope)
+func NewGCloudClient(projectId string, zone string) (gcloud GCloudClient, err error) {
+	client, err := google.DefaultClient(context.Background(), compute.ComputeScope)
 
 	if err != nil {
 		err = fmt.Errorf("Error creating compute client:\n%v", err)
 		return
 	}
-
-	gcloud.Client = client
 
 	service, err := compute.New(client)
 
@@ -45,13 +36,18 @@ func NewGCloudClient(projectId string, zone string) (gcloud *GCloud, err error) 
 		return
 	}
 
-	gcloud.Service = service
+	gcloud = &GCloud{
+		Client:    client,
+		ProjectID: projectId,
+		Service:   service,
+		Zone:      zone,
+	}
 
 	return
 }
 
 // DeleteNode delete a GCloud instance from a given node name
 func (g *GCloud) DeleteNode(name string) (err error) {
-	_, err = g.Service.Instances.Delete(g.ProjectID, g.Zone, name).Context(g.Context).Do()
+	_, err = g.Service.Instances.Delete(g.ProjectID, g.Zone, name).Context(context.Background()).Do()
 	return
 }

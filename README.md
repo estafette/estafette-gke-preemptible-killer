@@ -96,7 +96,7 @@ spec:
 kubectl proxy
 
 # in another shell
-go build && ./estafette-gke-preemptible-killer
+go build && ./estafette-gke-preemptible-killer -i 10
 ```
 
 Note: `KUBECONFIG=~/.kube/config` as environment variable can also be used if you don't want to use the `kubectl proxy`

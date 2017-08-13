@@ -278,7 +278,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 			return
 		}
 
-		var gcloud *GCloud
+		var gcloud GCloudClient
 		gcloud, err = NewGCloudClient(projectId, zone)
 
 		if err != nil {
