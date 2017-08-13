@@ -114,18 +114,13 @@ func main() {
 		}
 	}()
 
-	// define channels used to gracefully shutdown the application
-	var gracefulShutdown = make(chan os.Signal)
-	var shutdown = make(chan bool)
-
+	// define channel and wait group to gracefully shutdown the application
+	gracefulShutdown := make(chan os.Signal)
 	signal.Notify(gracefulShutdown, syscall.SIGTERM, syscall.SIGINT)
-
 	waitGroup := &sync.WaitGroup{}
-	waitGroup.Add(1)
 
 	// process nodes
-	go func(shutdown chan bool, waitGroup *sync.WaitGroup) {
-		defer waitGroup.Done()
+	go func(waitGroup *sync.WaitGroup) {
 		for {
 			Logger.Info().Msg("Listing all preemptible nodes for cluster...")
 
@@ -134,14 +129,7 @@ func main() {
 			nodes, err := kubernetes.GetPreemptibleNodes()
 
 			if err != nil {
-				// run process until shutdown is requested via SIGTERM and SIGINT
-				select {
-				case _ = <-shutdown:
-					return
-				default:
-				}
 				Logger.Error().Err(err).Msg("Error while getting the list of preemptible nodes")
-
 				Logger.Info().Msgf("Sleeping for %v seconds...", sleepTime)
 				time.Sleep(time.Duration(sleepTime) * time.Second)
 				continue
@@ -150,14 +138,9 @@ func main() {
 			Logger.Info().Msgf("Cluster has %v preemptible nodes", len(nodes.Items))
 
 			for _, node := range nodes.Items {
-				// run process until shutdown is requested via SIGTERM and SIGINT
-				select {
-				case _ = <-shutdown:
-					return
-				default:
-				}
-
+				waitGroup.Add(1)
 				err := processNode(kubernetes, node)
+				waitGroup.Done()
 
 				if err != nil {
 					nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
@@ -172,13 +155,12 @@ func main() {
 			Logger.Info().Msgf("Sleeping for %v seconds...", sleepTime)
 			time.Sleep(time.Duration(sleepTime) * time.Second)
 		}
-	}(shutdown, waitGroup)
+	}(waitGroup)
 
 	signalReceived := <-gracefulShutdown
 	Logger.Info().
 		Msgf("Received signal %v. Sending shutdown and waiting on goroutines...", signalReceived)
 
-	shutdown <- true
 	waitGroup.Wait()
 
 	Logger.Info().Msg("Shutting down...")
