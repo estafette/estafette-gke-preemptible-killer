@@ -1,6 +1,7 @@
 package main
 
 import (
+	stdlog "log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/alecthomas/kingpin"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	apiv1 "github.com/ericchiang/k8s/api/v1"
 
@@ -67,13 +69,6 @@ var (
 	goVersion = runtime.Version()
 )
 
-// Logger is a global logger
-var Logger = zerolog.New(os.Stdout).With().
-	Timestamp().
-	Str("app", "estafette-gke-preemptible-killer").
-	Str("version", version).
-	Logger()
-
 func init() {
 	// Metrics have to be registered to be exposed:
 	prometheus.MustRegister(nodeTotals)
@@ -85,8 +80,19 @@ func main() {
 	// log as severity for stackdriver logging to recognize the level
 	zerolog.LevelFieldName = "severity"
 
+	// set some default fields added to all logs
+	log.Logger = zerolog.New(os.Stdout).With().
+		Timestamp().
+		Str("app", "estafette-gke-preemptible-killer").
+		Str("version", version).
+		Logger()
+
+	// use zerolog for any logs sent via standard log library
+	stdlog.SetFlags(0)
+	stdlog.SetOutput(log.Logger)
+
 	// log startup message
-	Logger.Info().
+	log.Info().
 		Str("branch", branch).
 		Str("revision", revision).
 		Str("buildDate", buildDate).
@@ -97,12 +103,12 @@ func main() {
 		os.Getenv("KUBERNETES_NAMESPACE"), *kubeConfigPath)
 
 	if err != nil {
-		Logger.Fatal().Err(err).Msg("Error initializing Kubernetes client")
+		log.Fatal().Err(err).Msg("Error initializing Kubernetes client")
 	}
 
 	// start prometheus
 	go func() {
-		Logger.Info().
+		log.Info().
 			Str("port", *prometheusAddress).
 			Str("path", *prometheusMetricsPath).
 			Msg("Serving Prometheus metrics...")
@@ -110,7 +116,7 @@ func main() {
 		http.Handle(*prometheusMetricsPath, promhttp.Handler())
 
 		if err := http.ListenAndServe(*prometheusAddress, nil); err != nil {
-			Logger.Fatal().Err(err).Msg("Starting Prometheus listener failed")
+			log.Fatal().Err(err).Msg("Starting Prometheus listener failed")
 		}
 	}()
 
@@ -122,20 +128,20 @@ func main() {
 	// process nodes
 	go func(waitGroup *sync.WaitGroup) {
 		for {
-			Logger.Info().Msg("Listing all preemptible nodes for cluster...")
+			log.Info().Msg("Listing all preemptible nodes for cluster...")
 
 			sleepTime := ApplyJitter(*interval)
 
 			nodes, err := kubernetes.GetPreemptibleNodes()
 
 			if err != nil {
-				Logger.Error().Err(err).Msg("Error while getting the list of preemptible nodes")
-				Logger.Info().Msgf("Sleeping for %v seconds...", sleepTime)
+				log.Error().Err(err).Msg("Error while getting the list of preemptible nodes")
+				log.Info().Msgf("Sleeping for %v seconds...", sleepTime)
 				time.Sleep(time.Duration(sleepTime) * time.Second)
 				continue
 			}
 
-			Logger.Info().Msgf("Cluster has %v preemptible nodes", len(nodes.Items))
+			log.Info().Msgf("Cluster has %v preemptible nodes", len(nodes.Items))
 
 			for _, node := range nodes.Items {
 				waitGroup.Add(1)
@@ -144,7 +150,7 @@ func main() {
 
 				if err != nil {
 					nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
-					Logger.Error().
+					log.Error().
 						Err(err).
 						Str("host", *node.Metadata.Name).
 						Msg("Error while processing node")
@@ -152,18 +158,18 @@ func main() {
 				}
 			}
 
-			Logger.Info().Msgf("Sleeping for %v seconds...", sleepTime)
+			log.Info().Msgf("Sleeping for %v seconds...", sleepTime)
 			time.Sleep(time.Duration(sleepTime) * time.Second)
 		}
 	}(waitGroup)
 
 	signalReceived := <-gracefulShutdown
-	Logger.Info().
+	log.Info().
 		Msgf("Received signal %v. Sending shutdown and waiting on goroutines...", signalReceived)
 
 	waitGroup.Wait()
 
-	Logger.Info().Msg("Shutting down...")
+	log.Info().Msg("Shutting down...")
 }
 
 // getCurrentNodeState return the state of the node by reading its metadata annotations
@@ -185,14 +191,14 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
 
-	Logger.Info().
+	log.Info().
 		Str("host", *node.Metadata.Name).
 		Msgf("Annotation not found, adding %s to %s", annotationGKEPreemptibleKillerState, state.ExpiryDatetime)
 
 	err = k.SetNodeAnnotation(*node.Metadata.Name, annotationGKEPreemptibleKillerState, state.ExpiryDatetime)
 
 	if err != nil {
-		Logger.Warn().
+		log.Warn().
 			Err(err).
 			Str("host", *node.Metadata.Name).
 			Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
@@ -223,7 +229,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 	expiryDatetime, err := time.Parse(time.RFC3339, state.ExpiryDatetime)
 
 	if err != nil {
-		Logger.Error().
+		log.Error().
 			Err(err).
 			Str("host", *node.Metadata.Name).
 			Msgf("Error parsing expiry datetime with value '%s'", state.ExpiryDatetime)
@@ -234,14 +240,14 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 
 	// check if we need to delete the node or not
 	if timeDiff < 0 {
-		Logger.Info().
+		log.Info().
 			Str("host", *node.Metadata.Name).
 			Msgf("Node expired %.0f minute(s) ago, deleting...", timeDiff)
 
 		// set node unschedulable
 		err = k.SetUnschedulableState(*node.Metadata.Name, true)
 		if err != nil {
-			Logger.Error().
+			log.Error().
 				Err(err).
 				Str("host", *node.Metadata.Name).
 				Msg("Error setting node to unschedulable state")
@@ -253,7 +259,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 		projectId, zone, err = k.GetProjectIdAndZoneFromNode(*node.Metadata.Name)
 
 		if err != nil {
-			Logger.Error().
+			log.Error().
 				Err(err).
 				Str("host", *node.Metadata.Name).
 				Msg("Error getting project id and zone from node")
@@ -264,7 +270,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 		gcloud, err = NewGCloudClient(projectId, zone)
 
 		if err != nil {
-			Logger.Error().
+			log.Error().
 				Err(err).
 				Str("host", *node.Metadata.Name).
 				Msg("Error creating GCloud client")
@@ -275,7 +281,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 		err = k.DrainNode(*node.Metadata.Name, *drainTimeout)
 
 		if err != nil {
-			Logger.Error().
+			log.Error().
 				Err(err).
 				Str("host", *node.Metadata.Name).
 				Msg("Error deleting kubernetes node")
@@ -286,7 +292,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 		err = gcloud.DeleteNode(*node.Metadata.Name)
 
 		if err != nil {
-			Logger.Error().
+			log.Error().
 				Err(err).
 				Str("host", *node.Metadata.Name).
 				Msg("Error deleting GCloud instance")
@@ -295,7 +301,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 
 		nodeTotals.With(prometheus.Labels{"status": "killed"}).Inc()
 
-		Logger.Info().
+		log.Info().
 			Str("host", *node.Metadata.Name).
 			Msg("Node deleted")
 
@@ -304,7 +310,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 
 	nodeTotals.With(prometheus.Labels{"status": "skipped"}).Inc()
 
-	Logger.Info().
+	log.Info().
 		Str("host", *node.Metadata.Name).
 		Msgf("%.0f minute(s) to go before kill, keeping node", timeDiff)
 
