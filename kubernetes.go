@@ -11,6 +11,7 @@ import (
 	"github.com/ericchiang/k8s"
 	apiv1 "github.com/ericchiang/k8s/api/v1"
 	"github.com/ghodss/yaml"
+	"github.com/rs/zerolog/log"
 )
 
 type Kubernetes struct {
@@ -153,19 +154,19 @@ func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 	// Filter out DaemonSet from the list of pods
 	filteredPodList := filterOutPodByOwnerReferenceKind(podList.Items, "DaemonSet")
 
-	Logger.Info().
+	log.Info().
 		Str("host", name).
 		Msgf("%d pod(s) found", len(filteredPodList))
 
 	for _, pod := range filteredPodList {
-		Logger.Info().
+		log.Info().
 			Str("host", name).
 			Msgf("Deleting pod %s", *pod.Metadata.Name)
 
 		err = k.Client.CoreV1().DeletePod(context.Background(), *pod.Metadata.Name, *pod.Metadata.Namespace)
 
 		if err != nil {
-			Logger.Error().
+			log.Error().
 				Err(err).
 				Str("host", name).
 				Msgf("Error draining pod %s", *pod.Metadata.Name)
@@ -183,7 +184,7 @@ func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 			pendingPodList, err := k.Client.CoreV1().ListPods(context.Background(), k8s.AllNamespaces, fieldSelector)
 
 			if err != nil {
-				Logger.Error().
+				log.Error().
 					Err(err).
 					Str("host", name).
 					Msgf("Error getting list of pods, sleeping %ds", sleepTime)
@@ -201,7 +202,7 @@ func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 				return
 			}
 
-			Logger.Info().
+			log.Info().
 				Str("host", name).
 				Msgf("%d pod(s) pending deletion, sleeping %ds", podsPending, sleepTime)
 
@@ -213,13 +214,13 @@ func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 	case <-doneDraining:
 		break
 	case <-time.After(time.Duration(drainTimeout) * time.Second):
-		Logger.Warn().
+		log.Warn().
 			Str("host", name).
 			Msg("Draining node timeout reached")
 		return
 	}
 
-	Logger.Info().
+	log.Info().
 		Str("host", name).
 		Msg("Done draining node")
 
