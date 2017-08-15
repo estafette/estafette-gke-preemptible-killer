@@ -25,11 +25,13 @@ pipelines:
     - docker push estafette/${ESTAFETTE_LABEL_APP}:${ESTAFETTE_BUILD_VERSION}
     when:
       status == 'succeeded' &&
-      branch == 'master'
+      branch == 'master' &&
+      server == 'gocd'
 
   slack-notify:
-    image: docker:17.06.0-ce
+    image: golang:1.8.3-alpine3.6
     commands:
+    - apk --update add curl
     - 'curl -X POST --data-urlencode ''payload={"channel": "#build-status", "username": "estafette-ci-builder", "text": "Build ''${ESTAFETTE_BUILD_VERSION}'' for ''${ESTAFETTE_LABEL_APP}'' has failed!"}'' ${ESTAFETTE_SLACK_WEBHOOK}'
     when:
       status == 'failed'
