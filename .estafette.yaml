@@ -4,7 +4,7 @@ labels:
   language: golang
 
 pipelines:
-  set-pending-status:
+  set-pending-build-status:
     image: extensions/github-status:0.0.4
     status: pending
     when:
@@ -16,11 +16,6 @@ pipelines:
     commands:
     - go test `go list ./... | grep -v /vendor/`
     - CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags "-X main.version=${ESTAFETTE_BUILD_VERSION} -X main.revision=${ESTAFETTE_GIT_REVISION} -X main.branch=${ESTAFETTE_GIT_BRANCH} -X main.buildDate=${ESTAFETTE_BUILD_DATETIME}" -o ./publish/${ESTAFETTE_LABEL_APP} .
-
-  set-build-status:
-    image: extensions/github-status:0.0.4
-    when:
-      server == 'estafette'
 
   bake:
     image: docker:17.06.0-ce
@@ -38,6 +33,11 @@ pipelines:
       status == 'succeeded' &&
       branch == 'master' &&
       server == 'gocd'
+
+  set-build-status:
+    image: extensions/github-status:0.0.4
+    when:
+      server == 'estafette'
 
   slack-notify:
     image: golang:1.8.3-alpine3.6
