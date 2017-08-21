@@ -5,7 +5,7 @@ labels:
 
 pipelines:
   set-pending-build-status:
-    image: extensions/github-status:0.0.4
+    image: extensions/github-status:0.0.9
     status: pending
     when:
       server == 'estafette'
@@ -35,7 +35,7 @@ pipelines:
       server == 'gocd'
 
   set-build-status:
-    image: extensions/github-status:0.0.4
+    image: extensions/github-status:0.0.9
     when:
       server == 'estafette'
 
