@@ -1,3 +1,6 @@
+builder:
+  track: dev
+
 labels:
   app: estafette-gke-preemptible-killer
   team: estafette-team
@@ -5,7 +8,7 @@ labels:
 
 pipelines:
   set-pending-build-status:
-    image: extensions/github-status:0.0.9
+    image: extensions/github-status:dev
     status: pending
     when:
       server == 'estafette'
@@ -35,7 +38,7 @@ pipelines:
       server == 'gocd'
 
   set-build-status:
-    image: extensions/github-status:0.0.9
+    image: extensions/github-status:dev
     when:
       server == 'estafette'
 
