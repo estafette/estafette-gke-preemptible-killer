@@ -43,9 +43,10 @@ pipelines:
       server == 'estafette'
 
   slack-notify:
-    image: golang:1.9.0-alpine3.6
-    commands:
-    - apk --update add curl
-    - 'curl -X POST --data-urlencode ''payload={"channel": "#build-status", "username": "estafette-ci-builder", "text": "Build ''${ESTAFETTE_BUILD_VERSION}'' for ''${ESTAFETTE_LABEL_APP}'' has failed!"}'' ${ESTAFETTE_SLACK_WEBHOOK}'
+    image: extensions/slack-build-status:dev
+    name: ${ESTAFETTE_LABEL_APP}
+    channels:
+    - '#build-status'
     when:
-      status == 'failed'
+      status == 'failed' &&
+      server == 'gocd'
