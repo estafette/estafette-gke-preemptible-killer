@@ -6,6 +6,14 @@ labels:
   team: estafette-team
   language: golang
 
+version:
+  semver:
+    major: 0
+    minor: 0
+    patch: '{{auto}}'
+    labelTemplate: '{{branch}}'
+    releaseBranch: master
+
 pipelines:
   set-pending-build-status:
     image: extensions/github-status:dev
