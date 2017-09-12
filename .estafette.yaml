@@ -8,7 +8,7 @@ labels:
 
 version:
   semver:
-    major: 0
+    major: 1
     minor: 0
     patch: '{{auto}}'
     labelTemplate: '{{branch}}'
