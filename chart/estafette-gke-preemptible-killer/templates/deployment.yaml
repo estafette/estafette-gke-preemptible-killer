@@ -1,0 +1,48 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ template "fullname" . }}
+  labels:
+    app: {{ template "fullname" . }}
+    {{- if .Values.extraLabels }}
+{{ toYaml .Values.extraLabels | indent 4 }}
+    {{- end }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      app: {{ template "fullname" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "fullname" . }}
+        version: {{ .Chart.Version | replace "+" "_" }}-{{ .Release.Revision }}
+        {{- if .Values.extraLabels }}
+{{ toYaml .Values.extraLabels | indent 8 }}
+        {{- end }}
+      {{- if .Values.podAnnotations }}
+      annotations:
+{{ toYaml .Values.podAnnotations | indent 8 }}
+      {{- end }}
+    spec:
+      serviceAccount: {{ template "fullname" . }}
+      containers:
+      - name: {{ template "fullname" . }}
+        image: {{ .Values.image.repository }}:{{ .Chart.Version }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: "DRAIN_TIMEOUT"
+          value: {{ .Values.drainTimeout | quote }}
+        - name: "INTERVAL"
+          value: {{ .Values.interval | quote }}
+        resources:
+{{ toYaml .Values.resources | indent 10 }}
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.livenessProbe.path }}
+            port: {{ .Values.livenessProbe.port }}
+          initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+          timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}

@@ -46,6 +46,11 @@ spec:
         ports:
         - name: prom-metrics
           containerPort: 9001
+        env:
+        - name: DRAIN_TIMEOUT
+          value: "${DRAIN_TIMEOUT}"
+        - name: INTERVAL
+          value: "${INTERVAL}"
         resources:
           requests:
             cpu: ${CPU_REQUEST}

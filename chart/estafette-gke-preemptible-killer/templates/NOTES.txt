@@ -1,0 +1,7 @@
+
+Tail the logs of the application to see whether all runs well:
+
+kubectl logs -f -l app={{ template "fullname" . }} -n {{ .Release.Namespace }}
+
+  name: {{ template "fullname" . }}
+  namespace: {{ .Release.Namespace }}

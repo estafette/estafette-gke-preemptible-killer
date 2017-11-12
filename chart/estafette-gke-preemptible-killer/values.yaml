@@ -1,0 +1,34 @@
+
+image:
+  repository: estafette/estafette-gke-preemptible-killer
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 50m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 16Mi
+
+rbac:
+  # If true, create & use RBAC resources
+  create: false
+
+revisionHistoryLimit: 10
+
+drainTimeout: 300
+interval: 600
+
+livenessProbe:
+  path: /metrics
+  port: 9001
+  initialDelaySeconds: 30
+  timeoutSeconds: 1
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9001"
+
+extraLabels: {}
+  # team: tooling
