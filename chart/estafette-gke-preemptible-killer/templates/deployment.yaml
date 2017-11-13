@@ -29,6 +29,7 @@ spec:
       {{- end }}
     spec:
       serviceAccount: {{ template "fullname" . }}
+      terminationGracePeriodSeconds: {{ .Values.drainTimeout }}
       containers:
       - name: {{ template "fullname" . }}
         image: {{ .Values.image.repository }}:{{ .Chart.Version }}

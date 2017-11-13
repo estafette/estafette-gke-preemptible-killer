@@ -4,12 +4,12 @@ image:
   pullPolicy: IfNotPresent
 
 resources:
-  limits:
-    cpu: 50m
-    memory: 128Mi
   requests:
     cpu: 10m
     memory: 16Mi
+  limits:
+    cpu: 50m
+    memory: 128Mi
 
 rbac:
   # If true, create & use RBAC resources

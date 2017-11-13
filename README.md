@@ -60,12 +60,10 @@ export CPU_LIMIT=50m
 export MEMORY_LIMIT=128Mi
 
 # Setup RBAC
-curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/rbac.yaml -o rbac.yaml
-cat rbac.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
+curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/rbac.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
 
 # Run application
-curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/kubernetes.yaml -o kubernetes.yaml
-cat kubernetes.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
+curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/kubernetes.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
 ```
 
 ### Local development
