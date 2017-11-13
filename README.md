@@ -35,58 +35,35 @@ You can either use environment variables or flags to configure the following set
 | METRICS_PATH           | --metrics-path           | /metrics | The path to listen for Prometheus metrics requests
 
 
-### In cluster
+### Deploy with Helm
 
-As a Kubernetes administrator, you first need to deploy the rbac.yaml file which set role and permissions.
-Then deploy the application to Kubernetes cluster using the manifest below.
+```
+brew install kubernetes-helm
+helm init --history-max 25 --upgrade
+helm package chart/estafette-gke-preemptible-killer --version 1.0.35
+helm upgrade estafette-gke-preemptible-killer estafette-gke-preemptible-killer-1.0.35.tgz --namespace estafette --install --set rbac.create=true
+```
 
+### Deploy without Helm
 
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: estafette
----
-apiVersion: extensions/v1beta1
-kind: Deployment
-metadata:
-  name: estafette-gke-preemptible-killer
-  namespace: estafette
-  labels:
-    app: estafette-gke-preemptible-killer
-spec:
-  replicas: 1
-  strategy:
-    type: Recreate
-  selector:
-    matchLabels:
-      app: estafette-gke-preemptible-killer
-  template:
-    metadata:
-      labels:
-        app: estafette-gke-preemptible-killer
-    spec:
-      serviceAccount: estafette-gke-preemptible-killer
-      terminationGracePeriodSeconds: 300
-      containers:
-      - name: estafette-gke-preemptible-killer
-        image: estafette/estafette-gke-preemptible-killer:latest
-        ports:
-        - name: prom-metrics
-          containerPort: 9001
-        resources:
-          requests:
-            cpu: 10m
-            memory: 16Mi
-          limits:
-            cpu: 50m
-            memory: 128Mi
-        livenessProbe:
-          httpGet:
-            path: /metrics
-            port: prom-metrics
-          initialDelaySeconds: 30
-          timeoutSeconds: 1
+```
+export NAMESPACE=estafette
+export APP_NAME=estafette-gke-preemptible-killer
+export TEAM_NAME=tooling
+export VERSION=1.0.35
+export GO_PIPELINE_LABEL=1.0.35
+export DRAIN_TIMEOUT=300
+export INTERVAL=600
+export CPU_REQUEST=10m
+export MEMORY_REQUEST=16Mi
+export CPU_LIMIT=50m
+export MEMORY_LIMIT=128Mi
+
+# Setup RBAC
+curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/rbac.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
+
+# Run application
+curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/kubernetes.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
 ```
 
 ### Local development

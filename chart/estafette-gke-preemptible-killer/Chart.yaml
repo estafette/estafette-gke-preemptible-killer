@@ -1,0 +1,6 @@
+name: estafette-gke-preemptible-killer
+version: 1.0.35
+description: A Kubernetes controller that loops through a given preemptibles node pool and kills a node before the regular 24h life time of a preemptible VM
+home: https://estafette.io/
+sources:
+- https://github.com/estafette/estafette-gke-preemptible-killer
