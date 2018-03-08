@@ -67,6 +67,7 @@ var (
 	revision  string
 	buildDate string
 	goVersion = runtime.Version()
+	randomEstafette = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
 
 func init() {
@@ -187,7 +188,10 @@ func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 // getDesiredNodeState define the state of the node, update node annotations if not present
 func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreemptibleKillerState, err error) {
 	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0)
-	expiryDatetime := t.Add(24*time.Hour - time.Duration(*drainTimeout)*time.Second - time.Duration(rand.Int63n(24-12))*time.Hour).UTC()
+	drainTimeoutTime := time.Duration(*drainTimeout)*time.Second
+	// 43200 = 12h * 60m * 60s
+	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout))*time.Second
+	expiryDatetime := t.Add(12*time.Hour + drainTimeoutTime + randomTimeBetween0to12).UTC()
 
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
 
