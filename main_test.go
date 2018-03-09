@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math/rand"
 	"testing"
 	"time"
 
@@ -63,20 +64,30 @@ func TestGetCurrentNodeState(t *testing.T) {
 func TestGetDesiredNodeState(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.Disabled)
 
-	creationTimestamp := time.Date(2017, 11, 11, 11, 11, 11, 0, time.UTC).Unix()
+	creationTimestamp := time.Date(2017, 11, 11, 12, 00, 00, 0, time.UTC)
+	creationTimestampUnix := creationTimestamp.Unix()
+	creationTimestamp12HoursLater := creationTimestamp.Add(12*time.Hour)
+	creationTimestamp24HoursLater := creationTimestamp.Add(24*time.Hour)
 
 	node := &apiv1.Node{
 		Metadata: &metav1.ObjectMeta{
 			Name:              k8s.String("node-1"),
-			CreationTimestamp: &metav1.Time{Seconds: &creationTimestamp},
+			CreationTimestamp: &metav1.Time{Seconds: &creationTimestampUnix},
 		},
 	}
 
 	client := FakeNewKubernetesClient()
 
 	state, _ := getDesiredNodeState(client, node)
+	stateTS,_ := time.Parse(time.RFC3339,state.ExpiryDatetime)
 
-	if state.ExpiryDatetime != "2017-11-12T04:11:11Z" {
-		t.Errorf("Expect expiry date time to be 2017-11-12T04:11:11Z, instead got %s", state.ExpiryDatetime)
+	if !creationTimestamp12HoursLater.Before(stateTS) && !creationTimestamp24HoursLater.After(stateTS) {
+		t.Errorf("Expect expiry date time to be between 12 and 24h after the creation date %s, instead got %s", creationTimestamp, state.ExpiryDatetime)
+	}
+
+	randomEstafette = rand.New(rand.NewSource(0))
+	stateWithPreseed, _ := getDesiredNodeState(client, node)
+	if stateWithPreseed.ExpiryDatetime != "2017-11-12T11:27:54Z" {
+		t.Errorf("Expect expiry date time to be 2017-11-12T11:27:54Z, instead got %s", stateWithPreseed.ExpiryDatetime)
 	}
 }

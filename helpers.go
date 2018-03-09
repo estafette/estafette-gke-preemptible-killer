@@ -11,5 +11,5 @@ var R = rand.New(rand.NewSource(time.Now().UnixNano()))
 // ApplyJitter return a random number
 func ApplyJitter(input int) (output int) {
 	deviation := int(0.25 * float64(input))
-	return input - deviation + rand.Intn(2*deviation)
+	return input - deviation + R.Intn(2*deviation)
 }
