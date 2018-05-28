@@ -12,6 +12,18 @@ metadata:
     app: ${APP_NAME}
     team: ${TEAM_NAME}
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${APP_NAME}-secrets
+  namespace: ${NAMESPACE}
+  labels:
+    app: ${APP_NAME}
+    team: ${TEAM_NAME}
+type: Opaque
+data:
+  google-service-account.json: ${GOOGLE_SERVICE_ACCOUNT}
+---
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
@@ -61,6 +73,8 @@ spec:
           value: "${DRAIN_TIMEOUT}"
         - name: INTERVAL
           value: "${INTERVAL}"
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /etc/app-secrets/google-service-account.json
         resources:
           requests:
             cpu: ${CPU_REQUEST}
@@ -74,3 +88,10 @@ spec:
             port: prom-metrics
           initialDelaySeconds: 30
           timeoutSeconds: 1
+        volumeMounts:
+        - name: app-secrets
+          mountPath: /etc/app-secrets
+      volumes:
+      - name: app-secrets
+        secret:
+          secretName: ${APP_NAME}-secrets
