@@ -241,7 +241,7 @@ func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 // DrainKubeDNSFromNode deletes any kube-dns pods running on the node
 func (k *Kubernetes) DrainKubeDNSFromNode(name string, drainTimeout int) (err error) {
 	// Select all pods sitting on the node except the one from kube-system
-	labelSelector := k8s.QueryParam("labelSelector", "labelSelector=k8s-app=kube-dns")
+	labelSelector := k8s.QueryParam("labelSelector", "k8s-app=kube-dns")
 	podList, err := k.Client.CoreV1().ListPods(context.Background(), "kube-system", labelSelector)
 
 	if err != nil {
