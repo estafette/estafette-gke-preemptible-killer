@@ -41,6 +41,6 @@ func TestFilterOutPodByOwnerReferenceKind(t *testing.T) {
 	}
 
 	if *filteredPodList[0].Metadata.Name != "node-2" {
-		t.Errorf("Expect first item name to be 'node-2', instead got %s", filteredPodList[0].Metadata.Name)
+		t.Errorf("Expect first item name to be 'node-2', instead got %s", *filteredPodList[0].Metadata.Name)
 	}
 }

@@ -20,6 +20,7 @@ type Kubernetes struct {
 
 type KubernetesClient interface {
 	DrainNode(string, int) error
+	DrainKubeDNSFromNode(string, int) error
 	GetNode(string) (*apiv1.Node, error)
 	GetPreemptibleNodes() (*apiv1.NodeList, error)
 	GetProjectIdAndZoneFromNode(string) (string, string, error)
@@ -139,12 +140,22 @@ func filterOutPodByOwnerReferenceKind(podList []*apiv1.Pod, kind string) (output
 	return
 }
 
+// filterOutPodByNode filters out a list of pods by its node
+func filterOutPodByNode(podList []*apiv1.Pod, nodeName string) (output []*apiv1.Pod) {
+	for _, pod := range podList {
+		if *pod.Spec.NodeName == nodeName {
+			output = append(output, pod)
+		}
+	}
+
+	return
+}
+
 // DrainNode delete every pods from a given node and wait that all pods are removed before it succeed
 // it also make sure we don't select DaemonSet because they are not subject to unschedulable state
 func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 	// Select all pods sitting on the node except the one from kube-system
 	fieldSelector := k8s.QueryParam("fieldSelector", "spec.nodeName="+name+",metadata.namespace!=kube-system")
-
 	podList, err := k.Client.CoreV1().ListPods(context.Background(), k8s.AllNamespaces, fieldSelector)
 
 	if err != nil {
@@ -223,6 +234,92 @@ func (k *Kubernetes) DrainNode(name string, drainTimeout int) (err error) {
 	log.Info().
 		Str("host", name).
 		Msg("Done draining node")
+
+	return
+}
+
+// DrainKubeDNSFromNode deletes any kube-dns pods running on the node
+func (k *Kubernetes) DrainKubeDNSFromNode(name string, drainTimeout int) (err error) {
+	// Select all pods sitting on the node except the one from kube-system
+	labelSelector := k8s.QueryParam("labelSelector", "labelSelector=k8s-app=kube-dns")
+	podList, err := k.Client.CoreV1().ListPods(context.Background(), "kube-system", labelSelector)
+
+	if err != nil {
+		return
+	}
+
+	// Filter out pods running on other nodes
+	filteredPodList := filterOutPodByNode(podList.Items, name)
+
+	log.Info().
+		Str("host", name).
+		Msgf("%d kube-dns pod(s) found", len(filteredPodList))
+
+	for _, pod := range filteredPodList {
+		log.Info().
+			Str("host", name).
+			Msgf("Deleting pod %s", *pod.Metadata.Name)
+
+		err = k.Client.CoreV1().DeletePod(context.Background(), *pod.Metadata.Name, *pod.Metadata.Namespace)
+
+		if err != nil {
+			log.Error().
+				Err(err).
+				Str("host", name).
+				Msgf("Error draining pod %s", *pod.Metadata.Name)
+			continue
+		}
+	}
+
+	doneDraining := make(chan bool)
+
+	// Wait until all pods are deleted
+	go func() {
+		for {
+			sleepTime := ApplyJitter(10)
+			sleepDuration := time.Duration(sleepTime) * time.Second
+			podList, err := k.Client.CoreV1().ListPods(context.Background(), "kube-system", labelSelector)
+
+			if err != nil {
+				log.Error().
+					Err(err).
+					Str("host", name).
+					Msgf("Error getting list of kube-dns pods, sleeping %ds", sleepTime)
+
+				time.Sleep(sleepDuration)
+				continue
+			}
+
+			// Filter out DaemonSet from the list of pods
+			filteredPendingPodList := filterOutPodByNode(podList.Items, name)
+			podsPending := len(filteredPendingPodList)
+
+			if podsPending == 0 {
+				doneDraining <- true
+				return
+			}
+
+			log.Info().
+				Str("host", name).
+				Msgf("%d pod(s) pending deletion, sleeping %ds", podsPending, sleepTime)
+
+			time.Sleep(sleepDuration)
+		}
+	}()
+
+	select {
+	case <-doneDraining:
+		break
+	case <-time.After(time.Duration(drainTimeout) * time.Second):
+		log.Warn().
+			Str("host", name).
+			Msg("Draining kube-dns node timeout reached")
+		return
+	}
+
+	log.Info().
+		Str("host", name).
+		Msg("Done draining kube-dns from node")
 
 	return
 }
