@@ -23,7 +23,11 @@ func (k *FakeKubernetes) GetProjectIdAndZoneFromNode(name string) (string, strin
 	return "", "", nil
 }
 
-func (k *FakeKubernetes) DrainNode(nodepool string, drainTimeout int) error {
+func (k *FakeKubernetes) DrainNode(node string, drainTimeout int) error {
+	return nil
+}
+
+func (k *FakeKubernetes) DrainKubeDNSFromNode(node string, drainTimeout int) error {
 	return nil
 }
 
@@ -66,8 +70,8 @@ func TestGetDesiredNodeState(t *testing.T) {
 
 	creationTimestamp := time.Date(2017, 11, 11, 12, 00, 00, 0, time.UTC)
 	creationTimestampUnix := creationTimestamp.Unix()
-	creationTimestamp12HoursLater := creationTimestamp.Add(12*time.Hour)
-	creationTimestamp24HoursLater := creationTimestamp.Add(24*time.Hour)
+	creationTimestamp12HoursLater := creationTimestamp.Add(12 * time.Hour)
+	creationTimestamp24HoursLater := creationTimestamp.Add(24 * time.Hour)
 
 	node := &apiv1.Node{
 		Metadata: &metav1.ObjectMeta{
@@ -79,7 +83,7 @@ func TestGetDesiredNodeState(t *testing.T) {
 	client := FakeNewKubernetesClient()
 
 	state, _ := getDesiredNodeState(client, node)
-	stateTS,_ := time.Parse(time.RFC3339,state.ExpiryDatetime)
+	stateTS, _ := time.Parse(time.RFC3339, state.ExpiryDatetime)
 
 	if !creationTimestamp12HoursLater.Before(stateTS) && !creationTimestamp24HoursLater.After(stateTS) {
 		t.Errorf("Expect expiry date time to be between 12 and 24h after the creation date %s, instead got %s", creationTimestamp, state.ExpiryDatetime)

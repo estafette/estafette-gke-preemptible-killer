@@ -62,11 +62,11 @@ var (
 	)
 
 	// application version
-	version   string
-	branch    string
-	revision  string
-	buildDate string
-	goVersion = runtime.Version()
+	version         string
+	branch          string
+	revision        string
+	buildDate       string
+	goVersion       = runtime.Version()
 	randomEstafette = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
 
@@ -188,9 +188,9 @@ func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 // getDesiredNodeState define the state of the node, update node annotations if not present
 func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreemptibleKillerState, err error) {
 	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0)
-	drainTimeoutTime := time.Duration(*drainTimeout)*time.Second
+	drainTimeoutTime := time.Duration(*drainTimeout) * time.Second
 	// 43200 = 12h * 60m * 60s
-	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout))*time.Second
+	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout)) * time.Second
 	expiryDatetime := t.Add(12*time.Hour + drainTimeoutTime + randomTimeBetween0to12).UTC()
 
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
@@ -288,7 +288,18 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 			log.Error().
 				Err(err).
 				Str("host", *node.Metadata.Name).
-				Msg("Error deleting kubernetes node")
+				Msg("Error draining kubernetes node")
+			return
+		}
+
+		// drain kube-dns from kubernetes node
+		err = k.DrainKubeDNSFromNode(*node.Metadata.Name, *drainTimeout)
+
+		if err != nil {
+			log.Error().
+				Err(err).
+				Str("host", *node.Metadata.Name).
+				Msg("Error draining kube-dns from kubernetes node")
 			return
 		}
 
