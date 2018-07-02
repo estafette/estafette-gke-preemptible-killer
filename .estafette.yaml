@@ -3,6 +3,7 @@ builder:
 
 labels:
   app: estafette-gke-preemptible-killer
+  app-group: estafette-various
   team: estafette-team
   language: golang
 
