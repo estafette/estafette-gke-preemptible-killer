@@ -16,12 +16,6 @@ version:
     releaseBranch: master
 
 pipelines:
-  set-pending-build-status:
-    image: extensions/github-status:dev
-    status: pending
-    when:
-      server == 'estafette'
-
   build:
     image: golang:1.10.2-alpine3.7
     workDir: /go/src/github.com/estafette/${ESTAFETTE_LABEL_APP}
@@ -48,11 +42,6 @@ pipelines:
       status == 'succeeded' &&
       branch == 'master' &&
       server == 'gocd'
-
-  set-build-status:
-    image: extensions/github-status:dev
-    when:
-      server == 'estafette'
 
   slack-notify:
     image: extensions/slack-build-status:dev
