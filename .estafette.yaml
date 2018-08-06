@@ -15,7 +15,7 @@ version:
     labelTemplate: '{{branch}}'
     releaseBranch: master
 
-pipelines:
+stages:
   build:
     image: golang:1.10.2-alpine3.7
     workDir: /go/src/github.com/estafette/${ESTAFETTE_LABEL_APP}
@@ -51,3 +51,9 @@ pipelines:
     - '#build-status'
     when:
       status == 'failed'
+
+releases:
+  tooling:
+  development:
+  staging:
+  production:
