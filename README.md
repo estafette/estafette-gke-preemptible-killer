@@ -30,7 +30,7 @@ You can either use environment variables or flags to configure the following set
 | ---------------------- | ------------------------ | -------- | -----------------------------------------------------------------
 | DRAIN_TIMEOUT          | --drain-timeout          | 300      | Max time in second to wait before deleting a node
 | INTERVAL               | --interval (-i)          | 600      | Time in second to wait between each node check
-| KUBECONFIG             | --kubeconfig             |          | Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution
+| KUBECONFIG             | --kubeconfig             |          | Provide the path to the kube config path, usually located in ~/.kube/config. This argument is only needed if you're running the killer outside of your k8s cluster
 | METRICS_LISTEN_ADDRESS | --metrics-listen-address | :9001    | The address to listen on for Prometheus metrics requests
 | METRICS_PATH           | --metrics-path           | /metrics | The path to listen for Prometheus metrics requests
 
