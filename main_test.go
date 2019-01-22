@@ -35,6 +35,10 @@ func (k *FakeKubernetes) GetNode(name string) (*apiv1.Node, error) {
 	return &apiv1.Node{}, nil
 }
 
+func (k *FakeKubernetes) DeleteNode(name string) error {
+	return nil
+}
+
 func (k *FakeKubernetes) SetNodeAnnotation(name string, key string, value string) error {
 	return nil
 }

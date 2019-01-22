@@ -22,6 +22,7 @@ type KubernetesClient interface {
 	DrainNode(string, int) error
 	DrainKubeDNSFromNode(string, int) error
 	GetNode(string) (*apiv1.Node, error)
+	DeleteNode(string) error
 	GetPreemptibleNodes() (*apiv1.NodeList, error)
 	GetProjectIdAndZoneFromNode(string) (string, string, error)
 	SetNodeAnnotation(string, string, string) error
@@ -92,6 +93,11 @@ func (k *Kubernetes) GetPreemptibleNodes() (nodes *apiv1.NodeList, err error) {
 // GetNode return the node object from given name
 func (k *Kubernetes) GetNode(name string) (node *apiv1.Node, err error) {
 	node, err = k.Client.CoreV1().GetNode(context.Background(), name)
+	return
+}
+
+func (k *Kubernetes) DeleteNode(name string) (err error) {
+	err = k.Client.CoreV1().DeleteNode(context.Background(), name)
 	return
 }
 

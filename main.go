@@ -303,6 +303,17 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 			return
 		}
 
+		// delete node from kubernetes cluster
+		err = k.DeleteNode(*node.Metadata.Name)
+
+		if err != nil {
+			log.Error().
+				Err(err).
+				Str("host", *node.Metadata.Name).
+				Msg("Error deleting node")
+				return
+		}
+
 		// delete gcloud instance
 		err = gcloud.DeleteNode(*node.Metadata.Name)
 
