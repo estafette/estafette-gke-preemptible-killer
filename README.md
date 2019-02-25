@@ -34,24 +34,58 @@ You can either use environment variables or flags to configure the following set
 | METRICS_LISTEN_ADDRESS | --metrics-listen-address | :9001    | The address to listen on for Prometheus metrics requests
 | METRICS_PATH           | --metrics-path           | /metrics | The path to listen for Prometheus metrics requests
 
+### Create a Google Service Account
+
+In order to have the estafette-gke-preemptible-killer instance delete nodes,
+create a service account and give the _compute.instances.delete_ permissions.
+
+You can either create the service account and associate the role using the
+GCloud web console or the cli:
+
+```bash
+$ gcloud iam service-accounts create preemptible-killer \
+    --display-name preemptible-killer
+$ export project_id=$(gcloud config get-value project)
+$ gcloud iam roles create preemptible_killer \
+    --project $project_id \
+    --title preemptible-killer \
+    --description "Delete compute instances" \
+    --permissions compute.instances.delete
+$ export service_account_email=$(gcloud iam service-accounts list --filter preemptible-killer --format 'value([email])')
+$ gcloud iam service-accounts add-iam-policy-binding $service_account_email \
+    --member=serviceAccount:${service_account_email} \
+     --role=projects/${project_id}/roles/preemptible_killer
+$ gcloud iam service-accounts keys create --iam-account $service_account_email google_service_account.json
+```
 
 ### Deploy with Helm
 
-```
-brew install kubernetes-helm
-helm init --history-max 25 --upgrade
-helm package chart/estafette-gke-preemptible-killer --version 1.0.35
-helm upgrade estafette-gke-preemptible-killer estafette-gke-preemptible-killer-1.0.35.tgz --namespace estafette --install --set rbac.create=true
+```bash
+# Prepare Helm/Tiller
+$ kubectl create sa tiller -n kube-system
+$ helm init --service-account tiller
+$ kubectl create clusterrolebinding tiller \
+    --clusterrole=cluster-admin \
+    --serviceaccount=kube-system:tiller
+
+# Install
+$ helm upgrade estafette-gke-preemptible-killer \
+    --namespace estafette \
+    --install \
+    --set rbac.create=true \
+    --set-file googleServiceAccount=./google_service_account.json \
+    ./chart/estafette-gke-preemptible-killer
 ```
 
 ### Deploy without Helm
 
-```
+```bash
 export NAMESPACE=estafette
 export APP_NAME=estafette-gke-preemptible-killer
 export TEAM_NAME=tooling
 export VERSION=1.0.35
 export GO_PIPELINE_LABEL=1.0.35
+export GOOGLE_SERVICE_ACCOUNT=$(cat google-service-account.json | base64)
 export DRAIN_TIMEOUT=300
 export INTERVAL=600
 export CPU_REQUEST=10m
@@ -68,7 +102,7 @@ curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-kille
 
 ### Local development
 
-```
+```bash
 # proxy master
 kubectl proxy
 
