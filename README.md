@@ -43,19 +43,21 @@ You can either create the service account and associate the role using the
 GCloud web console or the cli:
 
 ```bash
+$ export project_id=<PROJECT>
 $ gcloud iam service-accounts create preemptible-killer \
     --display-name preemptible-killer
-$ export project_id=$(gcloud config get-value project)
 $ gcloud iam roles create preemptible_killer \
     --project $project_id \
     --title preemptible-killer \
     --description "Delete compute instances" \
     --permissions compute.instances.delete
 $ export service_account_email=$(gcloud iam service-accounts list --filter preemptible-killer --format 'value([email])')
-$ gcloud iam service-accounts add-iam-policy-binding $service_account_email \
+$ gcloud project add-iam-policy-binding $project_id \
     --member=serviceAccount:${service_account_email} \
-     --role=projects/${project_id}/roles/preemptible_killer
-$ gcloud iam service-accounts keys create --iam-account $service_account_email google_service_account.json
+    --role=projects/${project_id}/roles/preemptible_killer
+$ gcloud iam service-accounts keys create \
+    --iam-account $service_account_email \
+    google_service_account.json
 ```
 
 ### Deploy with Helm
