@@ -49,3 +49,10 @@ spec:
             port: {{ .Values.livenessProbe.port }}
           initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
           timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+        volumeMounts:
+        - name: app-secrets
+          mountPath: /etc/app-secrets
+      volumes:
+      - name: app-secrets
+        secret:
+          secretName: {{ template "fullname" . }}
