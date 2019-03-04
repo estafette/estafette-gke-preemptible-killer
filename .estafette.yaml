@@ -11,9 +11,6 @@ version:
   semver:
     major: 1
     minor: 0
-    patch: '{{auto}}'
-    labelTemplate: '{{branch}}'
-    releaseBranch: master
 
 stages:
   build:
