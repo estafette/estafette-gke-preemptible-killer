@@ -35,10 +35,12 @@ spec:
         image: {{ .Values.image.repository }}:{{ .Chart.Version }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         env:
-        - name: "DRAIN_TIMEOUT"
+        - name: DRAIN_TIMEOUT
           value: {{ .Values.drainTimeout | quote }}
-        - name: "INTERVAL"
+        - name: INTERVAL
           value: {{ .Values.interval | quote }}
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /etc/app-secrets/google-service-account.json
         resources:
 {{ toYaml .Values.resources | indent 10 }}
         livenessProbe:
@@ -47,3 +49,10 @@ spec:
             port: {{ .Values.livenessProbe.port }}
           initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
           timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+        volumeMounts:
+        - name: app-secrets
+          mountPath: /etc/app-secrets
+      volumes:
+      - name: app-secrets
+        secret:
+          secretName: {{ template "fullname" . }}
