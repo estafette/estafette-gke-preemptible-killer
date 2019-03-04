@@ -17,14 +17,14 @@ version:
 
 stages:
   build:
-    image: golang:1.11.5-alpine3.8
-    workDir: /go/src/${ESTAFETTE_GIT_SOURCE}/${ESTAFETTE_GIT_OWNER}/${ESTAFETTE_GIT_NAME}
+    image: golang:1.12.0-alpine3.9
     env:
       CGO_ENABLED: 0
       GOOS: linux
+      GOFLAGS: -mod=vendor
     commands:
-    - go test `go list ./... | grep -v /vendor/`
-    - CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags "-X main.version=${ESTAFETTE_BUILD_VERSION} -X main.revision=${ESTAFETTE_GIT_REVISION} -X main.branch=${ESTAFETTE_GIT_BRANCH} -X main.buildDate=${ESTAFETTE_BUILD_DATETIME}" -o ./publish/${ESTAFETTE_LABEL_APP} .
+    - go test ./...
+    - go build -a -installsuffix cgo -ldflags "-X main.version=${ESTAFETTE_BUILD_VERSION} -X main.revision=${ESTAFETTE_GIT_REVISION} -X main.branch=${ESTAFETTE_GIT_BRANCH} -X main.buildDate=${ESTAFETTE_BUILD_DATETIME}" -o ./publish/${ESTAFETTE_LABEL_APP} .
 
   bake:
     image: extensions/docker:dev
