@@ -52,7 +52,7 @@ $ gcloud iam roles create preemptible_killer \
     --description "Delete compute instances" \
     --permissions compute.instances.delete
 $ export service_account_email=$(gcloud iam service-accounts list --filter preemptible-killer --format 'value([email])')
-$ gcloud project add-iam-policy-binding $project_id \
+$ gcloud projects add-iam-policy-binding $project_id \
     --member=serviceAccount:${service_account_email} \
     --role=projects/${project_id}/roles/preemptible_killer
 $ gcloud iam service-accounts keys create \
