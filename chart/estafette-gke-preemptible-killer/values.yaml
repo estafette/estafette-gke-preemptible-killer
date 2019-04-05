@@ -20,7 +20,7 @@ revisionHistoryLimit: 10
 drainTimeout: 300
 interval: 600
 
-# Path to the ervice account used to interact with the Google Cloud API
+# Path to the service account used to interact with the Google Cloud API
 googleServiceAccount: ""
 
 livenessProbe:
