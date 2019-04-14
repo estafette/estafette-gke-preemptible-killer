@@ -9,9 +9,11 @@ import (
 	"runtime"
 	"sync"
 	"syscall"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kingpin"
+	"github.com/google/go-intervals/timespanset"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -21,8 +23,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// annotationGKEPreemptibleKillerState is the key of the annotation to use to store the expiry datetime
-const annotationGKEPreemptibleKillerState string = "estafette.io/gke-preemptible-killer-state"
+const (
+	// annotationGKEPreemptibleKillerState is the key of the annotation to use to store the expiry datetime
+	annotationGKEPreemptibleKillerState string = "estafette.io/gke-preemptible-killer-state"
+
+	// whitelistTimePrefix in `YYYY-MM-DDT` format, can be anthing
+	whitelistTimePrefix = "2222-22-22T"
+
+	// whitelistTimePlusOneDayPrefix in `YYYY-MM-DDT` format, has to be whitelistTimePrefix plus one day
+	whitelistTimePlusOneDayPrefix = "2222-22-23T"
+
+	// whitelistTimePostfix in `:ssZ` format, can be anything
+	whitelistTimePostfix = ":00Z"
+)
 
 // GKEPreemptibleKillerState represents the state of gke-preemptible-killer
 type GKEPreemptibleKillerState struct {
@@ -51,6 +64,21 @@ var (
 	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
 			Envar("KUBECONFIG").
 			String()
+	blacklist = kingpin.Flag("blacklist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is NOT allowed").
+			Envar("BLACKLIST_HOURS").
+			Default("").
+			Short('b').
+			String()
+	whitelist = kingpin.Flag("whitelist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed").
+			Envar("WHITELIST_HOURS").
+			Default("").
+			Short('w').
+			String()
+	whitelistHours = timespanset.Empty()
+	whitelistSecondCount = 0
+
+	whitelistAbsoluteStart, _ = time.Parse(time.RFC3339, whitelistTimePrefix + "00:00" + whitelistTimePostfix)
+	whitelistAbsoluteEnd, _ = time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix + "00:00" + whitelistTimePostfix)
 
 	// define prometheus counter
 	nodeTotals = prometheus.NewCounterVec(
@@ -77,6 +105,17 @@ func init() {
 
 func main() {
 	kingpin.Parse()
+
+	if (len(*whitelist) == 0) {
+		// If there's no whitelist, than the maximum range has to be allowed so that any blacklist
+		// might be subtracted from it.
+		processHours("00:00 - 23:59, 23:59 - 00:00", whitelistHours, "+")
+	} else {
+		processHours(*whitelist, whitelistHours, "+")
+	}
+
+	processHours(*blacklist, whitelistHours, "-")
+	whitelistHours.IntervalsBetween(whitelistAbsoluteStart, whitelistAbsoluteEnd, updateWhitelistSecondCount)
 
 	// log as severity for stackdriver logging to recognize the level
 	zerolog.LevelFieldName = "severity"
@@ -173,6 +212,69 @@ func main() {
 	log.Info().Msg("Shutting down...")
 }
 
+// processHours parses and merges time intervals, direction can be "+" or "-"
+func processHours(input string, output *timespanset.Set, direction string) {
+	// Time not specified, continue with no restrictions.
+	if len(input) == 0 {
+		return
+	}
+
+	// Split in intervals.
+	intervals := strings.Split(input, ", ")
+	for _, timeInterval := range intervals {
+		times := strings.Split(timeInterval, " - ")
+
+		// Check format.
+		if len(times) != 2 {
+			log.Error().Msgf("processHours(): interval ", timeInterval, " should be of the form `09:00 - 12:00`")
+			os.Exit(1)
+		}
+
+		// Start time
+		start, err := time.Parse(time.RFC3339, whitelistTimePrefix + times[0] + whitelistTimePostfix)
+		if err != nil {
+			log.Error().Msgf("processHours(): ", times[0], "cannot be parsed: ", err)
+			os.Exit(1)
+		}
+
+		// End time
+		end, err := time.Parse(time.RFC3339, whitelistTimePrefix + times[1] + whitelistTimePostfix)
+		if err != nil {
+			log.Error().Msgf("processHours(): ", times[1], "cannot be parsed: ", err)
+			os.Exit(1)
+		}
+
+		// If start is after end it means it contains midnight, so split in two.
+		if start.After(end) {
+			nextDayStart := whitelistAbsoluteStart
+			nextDayEnd := end
+			mergeTimespans(nextDayStart, nextDayEnd, direction)
+			end = whitelistAbsoluteEnd
+		}
+
+		// Merge timespans.
+		mergeTimespans(start, end, direction)
+	}
+}
+
+func mergeTimespans(start time.Time, end time.Time, direction string) {
+	if direction == "+" {
+		whitelistHours.Insert(start, end)
+	} else if direction == "-" {
+		subtrahend := timespanset.Empty()
+		subtrahend.Insert(start,end)
+		whitelistHours.Sub(subtrahend)
+	} else {
+		log.Error().Msgf("processHours(): direction can only be + or -")
+		os.Exit(1)
+	}
+}
+
+func updateWhitelistSecondCount(start, end time.Time) bool {
+	whitelistSecondCount += int(end.Sub(start).Seconds())
+	return true
+}
+
 // getCurrentNodeState return the state of the node by reading its metadata annotations
 func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 	var ok bool
@@ -187,11 +289,54 @@ func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 
 // getDesiredNodeState define the state of the node, update node annotations if not present
 func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreemptibleKillerState, err error) {
-	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0)
+	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0).UTC()
 	drainTimeoutTime := time.Duration(*drainTimeout) * time.Second
 	// 43200 = 12h * 60m * 60s
 	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout)) * time.Second
-	expiryDatetime := t.Add(12*time.Hour + drainTimeoutTime + randomTimeBetween0to12).UTC()
+	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0to12
+	truncatedCreationTime := t.Truncate(24 * time.Hour)
+	durationFromStartOfDayUntilCreation := t.Sub(truncatedCreationTime)
+	whitelistAdjustedSecondsToBeAdded := time.Duration(int((durationFromStartOfDayUntilCreation.Seconds() + timeToBeAdded.Seconds())) % whitelistSecondCount) * time.Second
+
+	var expiryDatetime time.Time
+
+	secondTime := false
+	for whitelistAdjustedSecondsToBeAdded.Seconds() > 0 {
+		whitelistHours.IntervalsBetween(whitelistAbsoluteStart, whitelistAbsoluteEnd, func(start, end time.Time) bool {
+			// If the current interval ends before the creation, skip for now.
+			projectedCreation := start.Truncate(24 * time.Hour).Add(durationFromStartOfDayUntilCreation)
+			if projectedCreation.After(end) {
+				return true
+			}
+
+			// If creation is in the middle of the current interval, start with the creation.
+			if projectedCreation.After(start) {
+				start = projectedCreation
+			}
+
+			// Check if we have reached the wanted time.
+			intervalPeriod := end.Sub(start)
+			if whitelistAdjustedSecondsToBeAdded.Seconds() < intervalPeriod.Seconds() {
+				expiryDatetime = truncatedCreationTime.Add(start.Add(whitelistAdjustedSecondsToBeAdded).Sub(whitelistAbsoluteStart))
+			}
+
+			// Subtract from how much we want to add.
+			whitelistAdjustedSecondsToBeAdded = time.Duration(whitelistAdjustedSecondsToBeAdded.Seconds() - intervalPeriod.Seconds()) * time.Second
+			if whitelistAdjustedSecondsToBeAdded.Seconds() < 0 {
+				return false
+			}
+
+			return true
+		})
+
+		// Just a safeguard, this loop should never run more than twice.
+		if (secondTime) {
+			log.Warn().Msgf("whitelist loop wants to run a third time")
+			break;
+		}
+
+		secondTime = true
+	}
 
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
 
@@ -207,7 +352,7 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 			Str("host", *node.Metadata.Name).
 			Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
 
-		state.ExpiryDatetime = t.UTC().Format(time.RFC3339)
+		state.ExpiryDatetime = t.Format(time.RFC3339)
 		nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
 
 		return
