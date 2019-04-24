@@ -55,4 +55,4 @@ spec:
       volumes:
       - name: app-secrets
         secret:
-          secretName: {{ template "fullname" . }}
+          secretName: {{ default (include "fullname" .) .Values.existingSecret }}
