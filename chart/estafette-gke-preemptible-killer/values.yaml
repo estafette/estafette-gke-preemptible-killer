@@ -20,7 +20,9 @@ revisionHistoryLimit: 10
 drainTimeout: 300
 interval: 600
 
-# Path to the service account used to interact with the Google Cloud API
+# you can specify existing secret with google serivce account used to interact with the Google Cloud API ...
+existingSecret: "gke-preemptible-killer" # key name should be "google-service-account.json"
+# ... or put file content here:
 googleServiceAccount: ""
 
 livenessProbe:
