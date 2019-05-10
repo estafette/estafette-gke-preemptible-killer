@@ -44,18 +44,18 @@ GCloud web console or the cli:
 
 ```bash
 $ export project_id=<PROJECT>
-$ gcloud iam service-accounts create preemptible-killer \
+$ gcloud iam --project=$project_id service-accounts create preemptible-killer \
     --display-name preemptible-killer
-$ gcloud iam roles create preemptible_killer \
+$ gcloud iam --project=$project_id roles create preemptible_killer \
     --project $project_id \
     --title preemptible-killer \
     --description "Delete compute instances" \
     --permissions compute.instances.delete
-$ export service_account_email=$(gcloud iam service-accounts list --filter preemptible-killer --format 'value([email])')
+$ export service_account_email=$(gcloud iam --project=$project_id service-accounts list --filter preemptible-killer --format 'value([email])')
 $ gcloud projects add-iam-policy-binding $project_id \
     --member=serviceAccount:${service_account_email} \
     --role=projects/${project_id}/roles/preemptible_killer
-$ gcloud iam service-accounts keys create \
+$ gcloud iam --project=$project_id service-accounts keys create \
     --iam-account $service_account_email \
     google_service_account.json
 ```
