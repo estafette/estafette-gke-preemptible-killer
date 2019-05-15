@@ -21,7 +21,8 @@ drainTimeout: 300
 interval: 600
 
 # you can specify existing secret with google serivce account used to interact with the Google Cloud API ...
-existingSecret: "gke-preemptible-killer" # key name should be "google-service-account.json"
+# key name should be "google-service-account.json"
+#existingSecret: "gke-preemptible-killer" 
 # ... or put file content here:
 googleServiceAccount: ""
 
