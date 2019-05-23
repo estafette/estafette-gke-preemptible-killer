@@ -9,11 +9,9 @@ import (
 	"runtime"
 	"sync"
 	"syscall"
-	"strings"
 	"time"
 
 	"github.com/alecthomas/kingpin"
-	"github.com/google/go-intervals/timespanset"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -26,15 +24,6 @@ import (
 const (
 	// annotationGKEPreemptibleKillerState is the key of the annotation to use to store the expiry datetime
 	annotationGKEPreemptibleKillerState string = "estafette.io/gke-preemptible-killer-state"
-
-	// whitelistTimePrefix in `YYYY-MM-DDT` format, can be anthing
-	whitelistTimePrefix = "2222-22-22T"
-
-	// whitelistTimePlusOneDayPrefix in `YYYY-MM-DDT` format, has to be whitelistTimePrefix plus one day
-	whitelistTimePlusOneDayPrefix = "2222-22-23T"
-
-	// whitelistTimePostfix in `:ssZ` format, can be anything
-	whitelistTimePostfix = ":00Z"
 )
 
 // GKEPreemptibleKillerState represents the state of gke-preemptible-killer
@@ -74,11 +63,6 @@ var (
 			Default("").
 			Short('w').
 			String()
-	whitelistHours = timespanset.Empty()
-	whitelistSecondCount = 0
-
-	whitelistAbsoluteStart, _ = time.Parse(time.RFC3339, whitelistTimePrefix + "00:00" + whitelistTimePostfix)
-	whitelistAbsoluteEnd, _ = time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix + "00:00" + whitelistTimePostfix)
 
 	// define prometheus counter
 	nodeTotals = prometheus.NewCounterVec(
@@ -106,38 +90,9 @@ func init() {
 func main() {
 	kingpin.Parse()
 
-	if (len(*whitelist) == 0) {
-		// If there's no whitelist, than the maximum range has to be allowed so that any blacklist
-		// might be subtracted from it.
-		processHours("00:00 - 23:59, 23:59 - 00:00", whitelistHours, "+")
-	} else {
-		processHours(*whitelist, whitelistHours, "+")
-	}
+	initializeLogger()
 
-	processHours(*blacklist, whitelistHours, "-")
-	whitelistHours.IntervalsBetween(whitelistAbsoluteStart, whitelistAbsoluteEnd, updateWhitelistSecondCount)
-
-	// log as severity for stackdriver logging to recognize the level
-	zerolog.LevelFieldName = "severity"
-
-	// set some default fields added to all logs
-	log.Logger = zerolog.New(os.Stdout).With().
-		Timestamp().
-		Str("app", "estafette-gke-preemptible-killer").
-		Str("version", version).
-		Logger()
-
-	// use zerolog for any logs sent via standard log library
-	stdlog.SetFlags(0)
-	stdlog.SetOutput(log.Logger)
-
-	// log startup message
-	log.Info().
-		Str("branch", branch).
-		Str("revision", revision).
-		Str("buildDate", buildDate).
-		Str("goVersion", goVersion).
-		Msg("Starting estafette-gke-preemptible-killer...")
+	initializeWhitelistHours()
 
 	kubernetes, err := NewKubernetesClient(os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT"),
 		os.Getenv("KUBERNETES_NAMESPACE"), *kubeConfigPath)
@@ -212,67 +167,28 @@ func main() {
 	log.Info().Msg("Shutting down...")
 }
 
-// processHours parses and merges time intervals, direction can be "+" or "-"
-func processHours(input string, output *timespanset.Set, direction string) {
-	// Time not specified, continue with no restrictions.
-	if len(input) == 0 {
-		return
-	}
+func initializeLogger() {
+	// log as severity for stackdriver logging to recognize the level
+	zerolog.LevelFieldName = "severity"
 
-	// Split in intervals.
-	intervals := strings.Split(input, ", ")
-	for _, timeInterval := range intervals {
-		times := strings.Split(timeInterval, " - ")
+	// set some default fields added to all logs
+	log.Logger = zerolog.New(os.Stdout).With().
+		Timestamp().
+		Str("app", "estafette-gke-preemptible-killer").
+		Str("version", version).
+		Logger()
 
-		// Check format.
-		if len(times) != 2 {
-			log.Error().Msgf("processHours(): interval ", timeInterval, " should be of the form `09:00 - 12:00`")
-			os.Exit(1)
-		}
+	// use zerolog for any logs sent via standard log library
+	stdlog.SetFlags(0)
+	stdlog.SetOutput(log.Logger)
 
-		// Start time
-		start, err := time.Parse(time.RFC3339, whitelistTimePrefix + times[0] + whitelistTimePostfix)
-		if err != nil {
-			log.Error().Msgf("processHours(): ", times[0], "cannot be parsed: ", err)
-			os.Exit(1)
-		}
-
-		// End time
-		end, err := time.Parse(time.RFC3339, whitelistTimePrefix + times[1] + whitelistTimePostfix)
-		if err != nil {
-			log.Error().Msgf("processHours(): ", times[1], "cannot be parsed: ", err)
-			os.Exit(1)
-		}
-
-		// If start is after end it means it contains midnight, so split in two.
-		if start.After(end) {
-			nextDayStart := whitelistAbsoluteStart
-			nextDayEnd := end
-			mergeTimespans(nextDayStart, nextDayEnd, direction)
-			end = whitelistAbsoluteEnd
-		}
-
-		// Merge timespans.
-		mergeTimespans(start, end, direction)
-	}
-}
-
-func mergeTimespans(start time.Time, end time.Time, direction string) {
-	if direction == "+" {
-		whitelistHours.Insert(start, end)
-	} else if direction == "-" {
-		subtrahend := timespanset.Empty()
-		subtrahend.Insert(start,end)
-		whitelistHours.Sub(subtrahend)
-	} else {
-		log.Error().Msgf("processHours(): direction can only be + or -")
-		os.Exit(1)
-	}
-}
-
-func updateWhitelistSecondCount(start, end time.Time) bool {
-	whitelistSecondCount += int(end.Sub(start).Seconds())
-	return true
+	// log startup message
+	log.Info().
+		Str("branch", branch).
+		Str("revision", revision).
+		Str("buildDate", buildDate).
+		Str("goVersion", goVersion).
+		Msg("Starting estafette-gke-preemptible-killer...")
 }
 
 // getCurrentNodeState return the state of the node by reading its metadata annotations
@@ -294,50 +210,8 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 	// 43200 = 12h * 60m * 60s
 	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout)) * time.Second
 	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0to12
-	truncatedCreationTime := t.Truncate(24 * time.Hour)
-	durationFromStartOfDayUntilCreation := t.Sub(truncatedCreationTime)
-	whitelistAdjustedSecondsToBeAdded := time.Duration(int((durationFromStartOfDayUntilCreation.Seconds() + timeToBeAdded.Seconds())) % whitelistSecondCount) * time.Second
 
-	var expiryDatetime time.Time
-
-	secondTime := false
-	for whitelistAdjustedSecondsToBeAdded.Seconds() > 0 {
-		whitelistHours.IntervalsBetween(whitelistAbsoluteStart, whitelistAbsoluteEnd, func(start, end time.Time) bool {
-			// If the current interval ends before the creation, skip for now.
-			projectedCreation := start.Truncate(24 * time.Hour).Add(durationFromStartOfDayUntilCreation)
-			if projectedCreation.After(end) {
-				return true
-			}
-
-			// If creation is in the middle of the current interval, start with the creation.
-			if projectedCreation.After(start) {
-				start = projectedCreation
-			}
-
-			// Check if we have reached the wanted time.
-			intervalPeriod := end.Sub(start)
-			if whitelistAdjustedSecondsToBeAdded.Seconds() < intervalPeriod.Seconds() {
-				expiryDatetime = truncatedCreationTime.Add(start.Add(whitelistAdjustedSecondsToBeAdded).Sub(whitelistAbsoluteStart))
-			}
-
-			// Subtract from how much we want to add.
-			whitelistAdjustedSecondsToBeAdded = time.Duration(whitelistAdjustedSecondsToBeAdded.Seconds() - intervalPeriod.Seconds()) * time.Second
-			if whitelistAdjustedSecondsToBeAdded.Seconds() < 0 {
-				return false
-			}
-
-			return true
-		})
-
-		// Just a safeguard, this loop should never run more than twice.
-		if (secondTime) {
-			log.Warn().Msgf("whitelist loop wants to run a third time")
-			break;
-		}
-
-		secondTime = true
-	}
-
+	expiryDatetime := getExpiryDate(t, timeToBeAdded)
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
 
 	log.Info().
@@ -403,9 +277,9 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 			return
 		}
 
-		var projectId string
+		var projectID string
 		var zone string
-		projectId, zone, err = k.GetProjectIdAndZoneFromNode(*node.Metadata.Name)
+		projectID, zone, err = k.GetProjectIdAndZoneFromNode(*node.Metadata.Name)
 
 		if err != nil {
 			log.Error().
@@ -416,7 +290,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 		}
 
 		var gcloud GCloudClient
-		gcloud, err = NewGCloudClient(projectId, zone)
+		gcloud, err = NewGCloudClient(projectID, zone)
 
 		if err != nil {
 			log.Error().
@@ -456,7 +330,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 				Err(err).
 				Str("host", *node.Metadata.Name).
 				Msg("Error deleting node")
-				return
+			return
 		}
 
 		// delete gcloud instance
