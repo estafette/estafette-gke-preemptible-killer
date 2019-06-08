@@ -31,9 +31,22 @@ type GKEPreemptibleKillerState struct {
 
 var (
 	// flags
+	blacklist = kingpin.Flag("blacklist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is NOT allowed").
+			Envar("BLACKLIST_HOURS").
+			Default("").
+			Short('b').
+			String()
 	drainTimeout = kingpin.Flag("drain-timeout", "Max time in second to wait before deleting a node.").
 			Envar("DRAIN_TIMEOUT").
 			Default("300").
+			Int()
+	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
+			Envar("KUBECONFIG").
+			String()
+	interval = kingpin.Flag("interval", "Time in second to wait between each node check.").
+			Envar("INTERVAL").
+			Default("600").
+			Short('i').
 			Int()
 	prometheusAddress = kingpin.Flag("metrics-listen-address", "The address to listen on for Prometheus metrics requests.").
 				Envar("METRICS_LISTEN_ADDRESS").
@@ -43,20 +56,7 @@ var (
 				Envar("METRICS_PATH").
 				Default("/metrics").
 				String()
-	interval = kingpin.Flag("interval", "Time in second to wait between each node check.").
-			Envar("INTERVAL").
-			Default("600").
-			Short('i').
-			Int()
-	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
-			Envar("KUBECONFIG").
-			String()
-	blacklist = kingpin.Flag("blacklist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is NOT allowed").
-			Envar("BLACKLIST_HOURS").
-			Default("").
-			Short('b').
-			String()
-	whitelist = kingpin.Flag("whitelist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed").
+	whitelist = kingpin.Flag("whitelist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed and preferred").
 			Envar("WHITELIST_HOURS").
 			Default("").
 			Short('w').
@@ -72,11 +72,13 @@ var (
 	)
 
 	// application version
-	version           string
-	branch            string
-	revision          string
-	buildDate         string
-	goVersion         = runtime.Version()
+	version   string
+	branch    string
+	revision  string
+	buildDate string
+	goVersion = runtime.Version()
+
+	// Various internals
 	randomEstafette   = rand.New(rand.NewSource(time.Now().UnixNano()))
 	whitelistInstance WhitelistInstance
 )
