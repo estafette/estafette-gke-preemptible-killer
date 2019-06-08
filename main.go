@@ -12,13 +12,11 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
-
 	apiv1 "github.com/ericchiang/k8s/api/v1"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -74,12 +72,13 @@ var (
 	)
 
 	// application version
-	version         string
-	branch          string
-	revision        string
-	buildDate       string
-	goVersion       = runtime.Version()
-	randomEstafette = rand.New(rand.NewSource(time.Now().UnixNano()))
+	version           string
+	branch            string
+	revision          string
+	buildDate         string
+	goVersion         = runtime.Version()
+	randomEstafette   = rand.New(rand.NewSource(time.Now().UnixNano()))
+	whitelistInstance WhitelistInstance
 )
 
 func init() {
@@ -92,7 +91,7 @@ func main() {
 
 	initializeLogger()
 
-	initializeWhitelistHours()
+	whitelistInstance.parseArguments()
 
 	kubernetes, err := NewKubernetesClient(os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT"),
 		os.Getenv("KUBERNETES_NAMESPACE"), *kubeConfigPath)
@@ -211,7 +210,7 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout)) * time.Second
 	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0to12
 
-	expiryDatetime := getExpiryDate(t, timeToBeAdded)
+	expiryDatetime := whitelistInstance.getExpiryDate(t, timeToBeAdded)
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
 
 	log.Info().

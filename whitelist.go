@@ -1,7 +1,7 @@
 package main
 
 import (
-	"os"
+	"fmt"
 	"strings"
 	"time"
 
@@ -24,46 +24,72 @@ const (
 )
 
 var (
-	// whitelistStart is the start of the day
-	whitelistStart, _ = time.Parse(time.RFC3339, whitelistTimePrefix+"00:00"+whitelistTimePostfix)
-
-	// whitelistNextDayStart is the start of the next day
-	whitelistNextDayStart, _ = time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix+"00:00"+whitelistTimePostfix)
-
-	// whitelistAfterTwoDaysStart is the start of the day after the next day
-	whitelistAfterTwoDaysStart, _ = time.Parse(time.RFC3339, whitelistTimePlusTwoDaysPrefix+"00:00"+whitelistTimePostfix)
-
-	// whitelistHours are whitelist periods
-	whitelistHours = timespanset.Empty()
-
-	// whitelistSecondCount is the total number of seconds cumulated from all the whitelist periods combined
-	whitelistSecondCount = 0
+	whitelistStart             time.Time
+	whitelistNextDayStart      time.Time
+	whitelistAfterTwoDaysStart time.Time
 )
 
-// initializeWhitelistHours initializes data structures by taking command line arguments into account
-func initializeWhitelistHours() {
+func init() {
+	var err error
+
+	// whitelistStart is the start of the day
+	whitelistStart, err = time.Parse(time.RFC3339, whitelistTimePrefix+"00:00"+whitelistTimePostfix)
+	if err != nil {
+		panic("whitelistStart parse error")
+	}
+
+	// whitelistNextDayStart is the start of the next day
+	whitelistNextDayStart, err = time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix+"00:00"+whitelistTimePostfix)
+	if err != nil {
+		panic("whitelistNextDayStart parse error")
+	}
+
+	// whitelistAfterTwoDaysStart is the start of the day after the next day
+	whitelistAfterTwoDaysStart, err = time.Parse(time.RFC3339, whitelistTimePlusTwoDaysPrefix+"00:00"+whitelistTimePostfix)
+	if err != nil {
+		panic("whitelistAfterTwoDaysStart parse error")
+	}
+}
+
+type WhitelistInstance struct {
+	// whitelistHours are whitelist periods
+	whitelistHours *timespanset.Set
+
+	// whitelistSecondCount is the total number of seconds cumulated from all the whitelist periods combined
+	whitelistSecondCount int
+}
+
+// initializeWhitelistHours initializes data structures by taking command line arguments into account.
+func (this *WhitelistInstance) initialize() {
+	this.whitelistHours = timespanset.Empty()
+	this.whitelistSecondCount = 0
+}
+
+func (this *WhitelistInstance) parseArguments() {
+	this.initialize()
 	if len(*whitelist) == 0 {
 		// If there's no whitelist, than the maximum range has to be allowed so that any blacklist
 		// might be subtracted from it.
-		processHours("00:00 - 23:59, 23:59 - 23:58", whitelistHours, "+")
+		this.processHours("00:00 - 23:59, 23:59 - 23:58", "+")
 	} else {
-		processHours(*whitelist, whitelistHours, "+")
+		this.processHours(*whitelist, "+")
 	}
 
-	processHours(*blacklist, whitelistHours, "-")
-	whitelistHours.IntervalsBetween(whitelistStart, whitelistAfterTwoDaysStart, updateWhitelistSecondCount)
+	this.processHours(*blacklist, "-")
+	this.whitelistHours.IntervalsBetween(whitelistStart, whitelistAfterTwoDaysStart, this.updateWhitelistSecondCount)
 }
 
-func getExpiryDate(t time.Time, timeToBeAdded time.Duration) (expiryDatetime time.Time) {
+// getExpiryDate calculates the expiry date of a node.
+func (this *WhitelistInstance) getExpiryDate(t time.Time, timeToBeAdded time.Duration) (expiryDatetime time.Time) {
 	truncatedCreationTime := t.Truncate(24 * time.Hour)
 	durationFromStartOfDayUntilCreation := t.Sub(truncatedCreationTime)
 	secondsToBeAdded := int(t.Add(timeToBeAdded).Sub(truncatedCreationTime).Seconds())
-	whitelistAdjustedDurationToBeAdded := time.Duration(secondsToBeAdded%whitelistSecondCount) * time.Second
+	whitelistAdjustedDurationToBeAdded := time.Duration(secondsToBeAdded%this.whitelistSecondCount) * time.Second
 
 	firstInterval := true
 	var projectedCreation time.Time
 	for whitelistAdjustedDurationToBeAdded.Seconds() > 0 {
-		whitelistHours.IntervalsBetween(whitelistStart, whitelistAfterTwoDaysStart, func(start, end time.Time) bool {
+		this.whitelistHours.IntervalsBetween(whitelistStart, whitelistAfterTwoDaysStart, func(start, end time.Time) bool {
 			intervalDuration := end.Sub(start)
 			if firstInterval {
 				// If the current interval ends before the creation, skip for now.
@@ -107,22 +133,21 @@ func getExpiryDate(t time.Time, timeToBeAdded time.Duration) (expiryDatetime tim
 	return expiryDatetime
 }
 
-// mergeTimespans merges time intervals
-func mergeTimespans(start time.Time, end time.Time, direction string) {
+// mergeTimespans merges time intervals.
+func (this *WhitelistInstance) mergeTimespans(start time.Time, end time.Time, direction string) {
 	if direction == "+" {
-		whitelistHours.Insert(start, end)
+		this.whitelistHours.Insert(start, end)
 	} else if direction == "-" {
 		subtrahend := timespanset.Empty()
 		subtrahend.Insert(start, end)
-		whitelistHours.Sub(subtrahend)
+		this.whitelistHours.Sub(subtrahend)
 	} else {
-		log.Error().Msgf("mergeTimespans(): direction can only be + or -")
-		os.Exit(4)
+		panic(fmt.Sprintf("mergeTimespans(): direction expected to be + or - but got '%v'", direction))
 	}
 }
 
-// processHours parses time stamps and passed them to mergeTimespans(), direction can be "+" or "-"
-func processHours(input string, output *timespanset.Set, direction string) {
+// processHours parses time stamps and passes them to mergeTimespans(), direction can be "+" or "-".
+func (this *WhitelistInstance) processHours(input string, direction string) {
 	// Time not specified, continue with no restrictions.
 	if len(input) == 0 {
 		return
@@ -135,22 +160,19 @@ func processHours(input string, output *timespanset.Set, direction string) {
 
 		// Check format.
 		if len(times) != 2 {
-			log.Error().Msgf("processHours(): interval %v should be of the form `09:00 - 12:00`", timeInterval)
-			os.Exit(1)
+			panic(fmt.Sprintf("processHours(): interval '%v' should be of the form `09:00 - 12:00`", timeInterval))
 		}
 
 		// Start time
 		start, err := time.Parse(time.RFC3339, whitelistTimePrefix+times[0]+whitelistTimePostfix)
 		if err != nil {
-			log.Error().Msgf("processHours(): %v cannot be parsed: %v", times[0], err)
-			os.Exit(2)
+			panic(fmt.Sprintf("processHours(): %v cannot be parsed: %v", times[0], err))
 		}
 
 		// End time
 		end, err := time.Parse(time.RFC3339, whitelistTimePrefix+times[1]+whitelistTimePostfix)
 		if err != nil {
-			log.Error().Msgf("processHours(): %v cannot be parsed: %v", times[1], err)
-			os.Exit(3)
+			panic(fmt.Sprintf("processHours(): %v cannot be parsed: %v", times[1], err))
 		}
 
 		// If start is after end it means it contains midnight, so split in two.
@@ -159,21 +181,23 @@ func processHours(input string, output *timespanset.Set, direction string) {
 
 			nextDayEnd, err := time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix+times[1]+whitelistTimePostfix)
 			if err != nil {
-				log.Error().Msgf("processHours(): %v cannot be parsed: %v", times[1], err)
-				os.Exit(4)
+				panic(fmt.Sprintf("processHours(): %v cannot be parsed: %v", times[1], err))
 			}
 
-			mergeTimespans(nextDayStart, nextDayEnd, direction)
+			this.mergeTimespans(nextDayStart, nextDayEnd, direction)
 			end = whitelistNextDayStart
 		}
 
 		// Merge timespans.
-		mergeTimespans(start, end, direction)
+		this.mergeTimespans(start, end, direction)
 	}
 }
 
-// updateWhitelistSecondCount adds the difference between two times to an accumulator
-func updateWhitelistSecondCount(start, end time.Time) bool {
-	whitelistSecondCount += int(end.Sub(start).Seconds())
+// updateWhitelistSecondCount adds the difference between two times to an accumulator.
+func (this *WhitelistInstance) updateWhitelistSecondCount(start, end time.Time) bool {
+	if start.After(end) {
+		panic(fmt.Sprintf("updateWhitelistSecondCount(): go-intervals timespanset is acting up providing reverse intervals: %v - %v", start, end))
+	}
+	this.whitelistSecondCount += int(end.Sub(start).Seconds())
 	return true
 }
