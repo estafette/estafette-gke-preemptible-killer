@@ -11,21 +11,27 @@ import (
 
 const (
 	// whitelistTimePrefix in `YYYY-MM-DDT` format, can be anthing
-	whitelistTimePrefix = "2222-22-22T"
+	whitelistTimePrefix = "2000-01-01T"
 
 	// whitelistTimePlusOneDayPrefix in `YYYY-MM-DDT` format, has to be whitelistTimePrefix plus one day
-	whitelistTimePlusOneDayPrefix = "2222-22-23T"
+	whitelistTimePlusOneDayPrefix = "2000-01-02T"
+
+	// whitelistTimePlusOneDayPrefix in `YYYY-MM-DDT` format, has to be whitelistTimePrefix plus two days
+	whitelistTimePlusTwoDaysPrefix = "2000-01-03T"
 
 	// whitelistTimePostfix in `:ssZ` format, can be anything
 	whitelistTimePostfix = ":00Z"
 )
 
 var (
-	// whitelistAbsoluteStart is the start of the day
-	whitelistAbsoluteStart, _ = time.Parse(time.RFC3339, whitelistTimePrefix+"00:00"+whitelistTimePostfix)
+	// whitelistStart is the start of the day
+	whitelistStart, _ = time.Parse(time.RFC3339, whitelistTimePrefix+"00:00"+whitelistTimePostfix)
 
-	// whitelistAbsoluteEnd is the start of the next day
-	whitelistAbsoluteEnd, _ = time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix+"00:00"+whitelistTimePostfix)
+	// whitelistNextDayStart is the start of the next day
+	whitelistNextDayStart, _ = time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix+"00:00"+whitelistTimePostfix)
+
+	// whitelistAfterTwoDaysStart is the start of the day after the next day
+	whitelistAfterTwoDaysStart, _ = time.Parse(time.RFC3339, whitelistTimePlusTwoDaysPrefix+"00:00"+whitelistTimePostfix)
 
 	// whitelistHours are whitelist periods
 	whitelistHours = timespanset.Empty()
@@ -39,47 +45,51 @@ func initializeWhitelistHours() {
 	if len(*whitelist) == 0 {
 		// If there's no whitelist, than the maximum range has to be allowed so that any blacklist
 		// might be subtracted from it.
-		processHours("00:00 - 23:59, 23:59 - 00:00", whitelistHours, "+")
+		processHours("00:00 - 23:59, 23:59 - 23:58", whitelistHours, "+")
 	} else {
 		processHours(*whitelist, whitelistHours, "+")
 	}
 
 	processHours(*blacklist, whitelistHours, "-")
-	whitelistHours.IntervalsBetween(whitelistAbsoluteStart, whitelistAbsoluteEnd, updateWhitelistSecondCount)
-	if whitelistSecondCount == 0 {
-		// In case of no blacklists & no whitelists.
-		whitelistSecondCount = 3600 * 24
-	}
+	whitelistHours.IntervalsBetween(whitelistStart, whitelistAfterTwoDaysStart, updateWhitelistSecondCount)
 }
 
 func getExpiryDate(t time.Time, timeToBeAdded time.Duration) (expiryDatetime time.Time) {
 	truncatedCreationTime := t.Truncate(24 * time.Hour)
 	durationFromStartOfDayUntilCreation := t.Sub(truncatedCreationTime)
-	whitelistAdjustedSecondsToBeAdded := time.Duration(int((durationFromStartOfDayUntilCreation.Seconds()+timeToBeAdded.Seconds()))%whitelistSecondCount) * time.Second
+	secondsToBeAdded := int(t.Add(timeToBeAdded).Sub(truncatedCreationTime).Seconds())
+	whitelistAdjustedDurationToBeAdded := time.Duration(secondsToBeAdded%whitelistSecondCount) * time.Second
 
-	secondTime := false
-	for whitelistAdjustedSecondsToBeAdded.Seconds() > 0 {
-		whitelistHours.IntervalsBetween(whitelistAbsoluteStart, whitelistAbsoluteEnd, func(start, end time.Time) bool {
-			// If the current interval ends before the creation, skip for now.
-			projectedCreation := start.Truncate(24 * time.Hour).Add(durationFromStartOfDayUntilCreation)
-			if projectedCreation.After(end) {
-				return true
+	firstInterval := true
+	var projectedCreation time.Time
+	for whitelistAdjustedDurationToBeAdded.Seconds() > 0 {
+		whitelistHours.IntervalsBetween(whitelistStart, whitelistAfterTwoDaysStart, func(start, end time.Time) bool {
+			intervalDuration := end.Sub(start)
+			if firstInterval {
+				// If the current interval ends before the creation, skip for now.
+				projectedCreation = start.Truncate(24 * time.Hour).Add(durationFromStartOfDayUntilCreation)
+				if projectedCreation.After(end) {
+					// And adjust duration.
+					durationFromStartOfDayUntilCreation = durationFromStartOfDayUntilCreation - intervalDuration
+					whitelistAdjustedDurationToBeAdded = whitelistAdjustedDurationToBeAdded - intervalDuration
+					return true
+				}
 			}
 
 			// If creation is in the middle of the current interval, start with the creation.
 			if projectedCreation.After(start) {
+				whitelistAdjustedDurationToBeAdded = whitelistAdjustedDurationToBeAdded - projectedCreation.Sub(start)
 				start = projectedCreation
 			}
 
 			// Check if we have reached the wanted time.
-			intervalPeriod := end.Sub(start)
-			if whitelistAdjustedSecondsToBeAdded.Seconds() < intervalPeriod.Seconds() {
-				expiryDatetime = truncatedCreationTime.Add(start.Add(whitelistAdjustedSecondsToBeAdded).Sub(whitelistAbsoluteStart))
+			if whitelistAdjustedDurationToBeAdded < intervalDuration {
+				expiryDatetime = truncatedCreationTime.Add(start.Add(whitelistAdjustedDurationToBeAdded).Sub(whitelistStart))
 			}
 
 			// Subtract from how much we want to add.
-			whitelistAdjustedSecondsToBeAdded = time.Duration(whitelistAdjustedSecondsToBeAdded.Seconds()-intervalPeriod.Seconds()) * time.Second
-			if whitelistAdjustedSecondsToBeAdded.Seconds() < 0 {
+			whitelistAdjustedDurationToBeAdded = time.Duration(whitelistAdjustedDurationToBeAdded.Seconds()-intervalDuration.Seconds()) * time.Second
+			if whitelistAdjustedDurationToBeAdded.Seconds() < 0 {
 				return false
 			}
 
@@ -87,12 +97,12 @@ func getExpiryDate(t time.Time, timeToBeAdded time.Duration) (expiryDatetime tim
 		})
 
 		// Just a safeguard, this loop should never run more than twice.
-		if secondTime {
+		if !firstInterval {
 			log.Warn().Msgf("whitelist loop wants to run a third time")
 			break
 		}
 
-		secondTime = true
+		firstInterval = false
 	}
 	return expiryDatetime
 }
@@ -106,7 +116,7 @@ func mergeTimespans(start time.Time, end time.Time, direction string) {
 		subtrahend.Insert(start, end)
 		whitelistHours.Sub(subtrahend)
 	} else {
-		log.Error().Msgf("processHours(): direction can only be + or -")
+		log.Error().Msgf("mergeTimespans(): direction can only be + or -")
 		os.Exit(4)
 	}
 }
@@ -145,10 +155,16 @@ func processHours(input string, output *timespanset.Set, direction string) {
 
 		// If start is after end it means it contains midnight, so split in two.
 		if start.After(end) {
-			nextDayStart := whitelistAbsoluteStart
-			nextDayEnd := end
+			nextDayStart := whitelistNextDayStart
+
+			nextDayEnd, err := time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix+times[1]+whitelistTimePostfix)
+			if err != nil {
+				log.Error().Msgf("processHours(): %v cannot be parsed: %v", times[1], err)
+				os.Exit(4)
+			}
+
 			mergeTimespans(nextDayStart, nextDayEnd, direction)
-			end = whitelistAbsoluteEnd
+			end = whitelistNextDayStart
 		}
 
 		// Merge timespans.

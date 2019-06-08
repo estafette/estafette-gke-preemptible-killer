@@ -86,7 +86,6 @@ func TestGetDesiredNodeState(t *testing.T) {
 
 	client := FakeNewKubernetesClient()
 
-	initializeLogger()
 	initializeWhitelistHours()
 	state, _ := getDesiredNodeState(client, node)
 	stateTS, _ := time.Parse(time.RFC3339, state.ExpiryDatetime)
