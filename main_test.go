@@ -5,11 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rs/zerolog"
-
 	"github.com/ericchiang/k8s"
 	apiv1 "github.com/ericchiang/k8s/api/v1"
 	metav1 "github.com/ericchiang/k8s/apis/meta/v1"
+	"github.com/rs/zerolog"
 )
 
 type FakeKubernetes struct {
@@ -86,6 +85,7 @@ func TestGetDesiredNodeState(t *testing.T) {
 
 	client := FakeNewKubernetesClient()
 
+	whitelistInstance.parseArguments()
 	state, _ := getDesiredNodeState(client, node)
 	stateTS, _ := time.Parse(time.RFC3339, state.ExpiryDatetime)
 

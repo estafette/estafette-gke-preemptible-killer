@@ -12,17 +12,17 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
-
 	apiv1 "github.com/ericchiang/k8s/api/v1"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
-// annotationGKEPreemptibleKillerState is the key of the annotation to use to store the expiry datetime
-const annotationGKEPreemptibleKillerState string = "estafette.io/gke-preemptible-killer-state"
+const (
+	// annotationGKEPreemptibleKillerState is the key of the annotation to use to store the expiry datetime
+	annotationGKEPreemptibleKillerState string = "estafette.io/gke-preemptible-killer-state"
+)
 
 // GKEPreemptibleKillerState represents the state of gke-preemptible-killer
 type GKEPreemptibleKillerState struct {
@@ -31,9 +31,22 @@ type GKEPreemptibleKillerState struct {
 
 var (
 	// flags
+	blacklist = kingpin.Flag("blacklist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is NOT allowed").
+			Envar("BLACKLIST_HOURS").
+			Default("").
+			Short('b').
+			String()
 	drainTimeout = kingpin.Flag("drain-timeout", "Max time in second to wait before deleting a node.").
 			Envar("DRAIN_TIMEOUT").
 			Default("300").
+			Int()
+	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
+			Envar("KUBECONFIG").
+			String()
+	interval = kingpin.Flag("interval", "Time in second to wait between each node check.").
+			Envar("INTERVAL").
+			Default("600").
+			Short('i').
 			Int()
 	prometheusAddress = kingpin.Flag("metrics-listen-address", "The address to listen on for Prometheus metrics requests.").
 				Envar("METRICS_LISTEN_ADDRESS").
@@ -43,13 +56,10 @@ var (
 				Envar("METRICS_PATH").
 				Default("/metrics").
 				String()
-	interval = kingpin.Flag("interval", "Time in second to wait between each node check.").
-			Envar("INTERVAL").
-			Default("600").
-			Short('i').
-			Int()
-	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
-			Envar("KUBECONFIG").
+	whitelist = kingpin.Flag("whitelist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed and preferred").
+			Envar("WHITELIST_HOURS").
+			Default("").
+			Short('w').
 			String()
 
 	// define prometheus counter
@@ -62,12 +72,15 @@ var (
 	)
 
 	// application version
-	version         string
-	branch          string
-	revision        string
-	buildDate       string
-	goVersion       = runtime.Version()
-	randomEstafette = rand.New(rand.NewSource(time.Now().UnixNano()))
+	version   string
+	branch    string
+	revision  string
+	buildDate string
+	goVersion = runtime.Version()
+
+	// Various internals
+	randomEstafette   = rand.New(rand.NewSource(time.Now().UnixNano()))
+	whitelistInstance WhitelistInstance
 )
 
 func init() {
@@ -78,27 +91,9 @@ func init() {
 func main() {
 	kingpin.Parse()
 
-	// log as severity for stackdriver logging to recognize the level
-	zerolog.LevelFieldName = "severity"
+	initializeLogger()
 
-	// set some default fields added to all logs
-	log.Logger = zerolog.New(os.Stdout).With().
-		Timestamp().
-		Str("app", "estafette-gke-preemptible-killer").
-		Str("version", version).
-		Logger()
-
-	// use zerolog for any logs sent via standard log library
-	stdlog.SetFlags(0)
-	stdlog.SetOutput(log.Logger)
-
-	// log startup message
-	log.Info().
-		Str("branch", branch).
-		Str("revision", revision).
-		Str("buildDate", buildDate).
-		Str("goVersion", goVersion).
-		Msg("Starting estafette-gke-preemptible-killer...")
+	whitelistInstance.parseArguments()
 
 	kubernetes, err := NewKubernetesClient(os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT"),
 		os.Getenv("KUBERNETES_NAMESPACE"), *kubeConfigPath)
@@ -173,6 +168,30 @@ func main() {
 	log.Info().Msg("Shutting down...")
 }
 
+func initializeLogger() {
+	// log as severity for stackdriver logging to recognize the level
+	zerolog.LevelFieldName = "severity"
+
+	// set some default fields added to all logs
+	log.Logger = zerolog.New(os.Stdout).With().
+		Timestamp().
+		Str("app", "estafette-gke-preemptible-killer").
+		Str("version", version).
+		Logger()
+
+	// use zerolog for any logs sent via standard log library
+	stdlog.SetFlags(0)
+	stdlog.SetOutput(log.Logger)
+
+	// log startup message
+	log.Info().
+		Str("branch", branch).
+		Str("revision", revision).
+		Str("buildDate", buildDate).
+		Str("goVersion", goVersion).
+		Msg("Starting estafette-gke-preemptible-killer...")
+}
+
 // getCurrentNodeState return the state of the node by reading its metadata annotations
 func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 	var ok bool
@@ -187,12 +206,13 @@ func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 
 // getDesiredNodeState define the state of the node, update node annotations if not present
 func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreemptibleKillerState, err error) {
-	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0)
+	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0).UTC()
 	drainTimeoutTime := time.Duration(*drainTimeout) * time.Second
 	// 43200 = 12h * 60m * 60s
 	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout)) * time.Second
-	expiryDatetime := t.Add(12*time.Hour + drainTimeoutTime + randomTimeBetween0to12).UTC()
+	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0to12
 
+	expiryDatetime := whitelistInstance.getExpiryDate(t, timeToBeAdded)
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
 
 	log.Info().
@@ -207,7 +227,7 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 			Str("host", *node.Metadata.Name).
 			Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
 
-		state.ExpiryDatetime = t.UTC().Format(time.RFC3339)
+		state.ExpiryDatetime = t.Format(time.RFC3339)
 		nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
 
 		return
@@ -258,9 +278,9 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 			return
 		}
 
-		var projectId string
+		var projectID string
 		var zone string
-		projectId, zone, err = k.GetProjectIdAndZoneFromNode(*node.Metadata.Name)
+		projectID, zone, err = k.GetProjectIdAndZoneFromNode(*node.Metadata.Name)
 
 		if err != nil {
 			log.Error().
@@ -271,7 +291,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 		}
 
 		var gcloud GCloudClient
-		gcloud, err = NewGCloudClient(projectId, zone)
+		gcloud, err = NewGCloudClient(projectID, zone)
 
 		if err != nil {
 			log.Error().
@@ -311,7 +331,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 				Err(err).
 				Str("host", *node.Metadata.Name).
 				Msg("Error deleting node")
-				return
+			return
 		}
 
 		// delete gcloud instance

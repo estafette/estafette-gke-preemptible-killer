@@ -14,6 +14,7 @@ require (
 	github.com/ericchiang/k8s v0.0.0-20170725150632-85c31b99a193
 	github.com/ghodss/yaml v1.0.0
 	github.com/golang/protobuf v0.0.0-20170808021621-1909bc2f63dc // indirect
+	github.com/google/go-intervals v0.0.0-20171120085516-250c62ad245e
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.6 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
