@@ -104,7 +104,28 @@ curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-kille
 curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/kubernetes.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
 ```
 
-### Local development
+
+
+## Development
+
+To start development run
+
+```bash
+git clone git@github.com:estafette/estafette-ci-api.git
+cd estafette-ci-api
+```
+
+Before committing your changes run
+
+```bash
+go test
+go mod tidy
+go mod vendor
+```
+
+### Testing
+
+In order to test your local changes against an external Kubernetes cluster use the following commands:
 
 ```bash
 # proxy master
