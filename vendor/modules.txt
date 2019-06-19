@@ -44,6 +44,9 @@ github.com/ericchiang/k8s/util/intstr
 github.com/ghodss/yaml
 # github.com/golang/protobuf v0.0.0-20170808021621-1909bc2f63dc
 github.com/golang/protobuf/proto
+# github.com/google/go-intervals v0.0.0-20171120085516-250c62ad245e
+github.com/google/go-intervals/timespanset
+github.com/google/go-intervals/intervalset
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/prometheus/client_golang v0.8.0
