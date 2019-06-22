@@ -154,13 +154,14 @@ func (this *WhitelistInstance) processHours(input string, direction string) {
 	}
 
 	// Split in intervals.
-	intervals := strings.Split(input, ", ")
+	input = strings.Replace(input, " ", "", -1)
+	intervals := strings.Split(input, ",")
 	for _, timeInterval := range intervals {
-		times := strings.Split(timeInterval, " - ")
+		times := strings.Split(timeInterval, "-")
 
 		// Check format.
 		if len(times) != 2 {
-			panic(fmt.Sprintf("processHours(): interval '%v' should be of the form `09:00 - 12:00`", timeInterval))
+			panic(fmt.Sprintf("processHours(): interval '%v' should be of the form `09:00 - 11:00[, 21:00 - 23:00[, ...]]`", timeInterval))
 		}
 
 		// Start time
