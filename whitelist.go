@@ -10,49 +10,45 @@ import (
 )
 
 const (
-	// whitelistTimePrefix in `YYYY-MM-DDT` format, can be anthing
-	whitelistTimePrefix = "2000-01-01T"
+	// whitelistStartPrefix in `YYYY-MM-DDT` format, can be anthing
+	whitelistStartPrefix = "2000-01-01T"
 
-	// whitelistTimePlusOneDayPrefix in `YYYY-MM-DDT` format, has to be whitelistTimePrefix plus one day
-	whitelistTimePlusOneDayPrefix = "2000-01-02T"
-
-	// whitelistTimePlusOneDayPrefix in `YYYY-MM-DDT` format, has to be whitelistTimePrefix plus two days
-	whitelistTimePlusTwoDaysPrefix = "2000-01-03T"
+	// whitelistEndPrefix in `YYYY-MM-DDT` format, has to be whitelistStartPrefix plus one day
+	whitelistEndPrefix = "2000-01-02T"
 
 	// whitelistTimePostfix in `:ssZ` format, can be anything
 	whitelistTimePostfix = ":00Z"
 )
 
 var (
-	whitelistStart             time.Time
-	whitelistNextDayStart      time.Time
-	whitelistAfterTwoDaysStart time.Time
+	whitelistStart time.Time
+	whitelistEnd   time.Time
 )
 
 func init() {
 	var err error
 
 	// whitelistStart is the start of the day
-	whitelistStart, err = time.Parse(time.RFC3339, whitelistTimePrefix+"00:00"+whitelistTimePostfix)
+	whitelistStart, err = time.Parse(time.RFC3339, whitelistStartPrefix+"00:00"+whitelistTimePostfix)
 	if err != nil {
 		panic("whitelistStart parse error")
 	}
 
-	// whitelistNextDayStart is the start of the next day
-	whitelistNextDayStart, err = time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix+"00:00"+whitelistTimePostfix)
+	// whitelistEnd is the start of the next day
+	whitelistEnd, err = time.Parse(time.RFC3339, whitelistEndPrefix+"00:00"+whitelistTimePostfix)
 	if err != nil {
-		panic("whitelistNextDayStart parse error")
-	}
-
-	// whitelistAfterTwoDaysStart is the start of the day after the next day
-	whitelistAfterTwoDaysStart, err = time.Parse(time.RFC3339, whitelistTimePlusTwoDaysPrefix+"00:00"+whitelistTimePostfix)
-	if err != nil {
-		panic("whitelistAfterTwoDaysStart parse error")
+		panic("whitelistEnd parse error")
 	}
 }
 
 // WhitelistInstance is resposible for one processing of whitelist and blacklist hours
 type WhitelistInstance struct {
+	// blacklist contains blacklists as passed arguments
+	blacklist string
+
+	// whitelist contains whitelists as passed arguments
+	whitelist string
+
 	// whitelistHours are whitelist periods
 	whitelistHours *timespanset.Set
 
@@ -68,64 +64,72 @@ func (w *WhitelistInstance) initialize() {
 
 func (w *WhitelistInstance) parseArguments() {
 	w.initialize()
-	if len(*whitelist) == 0 {
+	if len(w.whitelist) == 0 {
 		// If there's no whitelist, than the maximum range has to be allowed so that any blacklist
 		// might be subtracted from it.
-		w.processHours("00:00 - 23:59, 23:59 - 23:58", "+")
+		w.processHours("00:00 - 12:00, 12:00 - 00:00", "+")
 	} else {
-		w.processHours(*whitelist, "+")
+		w.processHours(w.whitelist, "+")
 	}
 
-	w.processHours(*blacklist, "-")
-	w.whitelistHours.IntervalsBetween(whitelistStart, whitelistAfterTwoDaysStart, w.updateWhitelistSecondCount)
+	w.processHours(w.blacklist, "-")
+	w.whitelistHours.IntervalsBetween(whitelistStart, whitelistEnd, w.updateWhitelistSecondCount)
 }
 
 // getExpiryDate calculates the expiry date of a node.
 func (w *WhitelistInstance) getExpiryDate(t time.Time, timeToBeAdded time.Duration) (expiryDatetime time.Time) {
+	offset := 0 * time.Second
 	truncatedCreationTime := t.Truncate(24 * time.Hour)
-	durationFromStartOfDayUntilCreation := t.Sub(truncatedCreationTime)
-	secondsToBeAdded := int(t.Add(timeToBeAdded).Sub(truncatedCreationTime).Seconds())
-	whitelistAdjustedDurationToBeAdded := time.Duration(secondsToBeAdded%w.whitelistSecondCount) * time.Second
+	projectedCreation := whitelistStart.Add(t.Sub(truncatedCreationTime))
 
-	firstInterval := true
-	var projectedCreation time.Time
-	for whitelistAdjustedDurationToBeAdded.Seconds() > 0 {
-		w.whitelistHours.IntervalsBetween(whitelistStart, whitelistAfterTwoDaysStart, func(start, end time.Time) bool {
-			intervalDuration := end.Sub(start)
-			if firstInterval {
-				// If the current interval ends before the creation, skip for now.
-				projectedCreation = start.Truncate(24 * time.Hour).Add(durationFromStartOfDayUntilCreation)
-				if end.Before(projectedCreation) {
-					// And adjust duration.
-					durationFromStartOfDayUntilCreation = durationFromStartOfDayUntilCreation - intervalDuration
-					whitelistAdjustedDurationToBeAdded = whitelistAdjustedDurationToBeAdded - intervalDuration
-					return true
-				}
+	for timeToBeAdded > 0 {
+		// If the expiry date time is bound to surpass the 24h hard limit...
+		if offset >= 48*time.Hour {
+			// Let the user know and fallback to no whitelist.
+			log.Error().Msg(`Falling back to no whitelists. Contact
+				maintainer, whitelist resolution is wrong, it surpasses the
+				24h hard limit of preemptible nodes.`)
+			w.initialize()
+			w.whitelist = ""
+			w.blacklist = ""
+			w.parseArguments()
+			return w.getExpiryDate(t, timeToBeAdded)
+		}
+
+		// For all whitelisted intervals...
+		w.whitelistHours.IntervalsBetween(whitelistStart, whitelistEnd, func(start, end time.Time) bool {
+			// If the current interval ends before the creation...
+			if offset == 0 && end.Before(projectedCreation) {
+				// Skip for now.
+				return true
 			}
 
-			// If creation is in the middle of the current interval, start with the creation.
-			if start.Before(projectedCreation) {
-				whitelistAdjustedDurationToBeAdded = whitelistAdjustedDurationToBeAdded - projectedCreation.Sub(start)
+			// If creation is in the middle of the current interval...
+			if offset == 0 && start.Before(projectedCreation) {
+				// Start with creation.
 				start = projectedCreation
 			}
 
-			// Check if we have reached the wanted time.
-			if whitelistAdjustedDurationToBeAdded < intervalDuration {
-				expiryDatetime = truncatedCreationTime.Add(start.Add(whitelistAdjustedDurationToBeAdded).Sub(whitelistStart))
+			// If expiry time has been reached...
+			intervalDuration := end.Sub(start)
+			if timeToBeAdded <= intervalDuration {
+				// This is it, project it back to real time.
+				expiryDatetime = truncatedCreationTime.Add(start.Add(timeToBeAdded).Sub(whitelistStart)).Add(offset)
 			}
 
-			// Subtract from how much we want to add.
-			whitelistAdjustedDurationToBeAdded = time.Duration(whitelistAdjustedDurationToBeAdded.Seconds()-intervalDuration.Seconds()) * time.Second
-			return whitelistAdjustedDurationToBeAdded.Seconds() > 0
+			// Consume this interval.
+			timeToBeAdded -= intervalDuration
+
+			// Do we want another interval?
+			return timeToBeAdded > 0
 		})
 
-		// Just a safeguard, w loop should never run more than twice.
-		if !firstInterval {
-			log.Warn().Msgf("whitelist loop wants to run a third time")
-			break
-		}
-
-		firstInterval = false
+		// Advancing to the next set of intervals means advancing another 24h in the expiry date
+		// time, but this is not effective in the times used above since they repeat in the same
+		// interval, so this offset brings that advance into effect. This does not make the expiry
+		// date time surpass the 24h hard limit of preemptible nodes. AN offset of 24h would mean
+		// 24h since truncatedCreationTime meaning it is the next day, but before usual deletion.
+		offset += 24 * time.Hour
 	}
 	return expiryDatetime
 }
@@ -162,28 +166,21 @@ func (w *WhitelistInstance) processHours(input string, direction string) {
 		}
 
 		// Start time
-		start, err := time.Parse(time.RFC3339, whitelistTimePrefix+times[0]+whitelistTimePostfix)
+		start, err := time.Parse(time.RFC3339, whitelistStartPrefix+times[0]+whitelistTimePostfix)
 		if err != nil {
 			panic(fmt.Sprintf("processHours(): %v cannot be parsed: %v", times[0], err))
 		}
 
 		// End time
-		end, err := time.Parse(time.RFC3339, whitelistTimePrefix+times[1]+whitelistTimePostfix)
+		end, err := time.Parse(time.RFC3339, whitelistStartPrefix+times[1]+whitelistTimePostfix)
 		if err != nil {
 			panic(fmt.Sprintf("processHours(): %v cannot be parsed: %v", times[1], err))
 		}
 
 		// If end is before start it means it contains midnight, so split in two.
 		if end.Before(start) {
-			nextDayStart := whitelistNextDayStart
-
-			nextDayEnd, err := time.Parse(time.RFC3339, whitelistTimePlusOneDayPrefix+times[1]+whitelistTimePostfix)
-			if err != nil {
-				panic(fmt.Sprintf("processHours(): %v cannot be parsed: %v", times[1], err))
-			}
-
-			w.mergeTimespans(nextDayStart, nextDayEnd, direction)
-			end = whitelistNextDayStart
+			w.mergeTimespans(whitelistStart, end, direction)
+			end = whitelistEnd
 		}
 
 		// Merge timespans.
