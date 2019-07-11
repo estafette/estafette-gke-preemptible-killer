@@ -42,9 +42,9 @@ spec:
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: /etc/app-secrets/google-service-account.json
         - name: WHITELIST_HOURS
-          value: {{ .Values.whitelisHours | quote }}
+          value: {{ .Values.whitelistHours | quote }}
         - name: BLACKLIST_HOURS
-          value: {{ .Values.blacklisHours | quote }}          
+          value: {{ .Values.blacklistHours | quote }}          
         resources:
 {{ toYaml .Values.resources | indent 10 }}
         livenessProbe:
