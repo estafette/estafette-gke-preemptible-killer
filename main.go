@@ -86,6 +86,9 @@ var (
 func init() {
 	// Metrics have to be registered to be exposed:
 	prometheus.MustRegister(nodeTotals)
+
+	whitelistInstance.blacklist = *blacklist
+	whitelistInstance.whitelist = *whitelist
 }
 
 func main() {

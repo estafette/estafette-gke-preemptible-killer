@@ -90,11 +90,11 @@ func TestProcessHours(t *testing.T) {
 	i.initialize()
 
 	// Check that argument parsing works.
-	*whitelist = "00:00 - 04:00, 08:00 - 12:00, 16:00 - 20:00"
-	*blacklist = "01:00 - 02:00, 06:00 - 14:00, 15:00 - 17:00"
+	i.whitelist = "00:00 - 04:00, 08:00 - 12:00, 16:00 - 20:00"
+	i.blacklist = "01:00 - 02:00, 06:00 - 14:00, 15:00 - 17:00"
 	i.parseArguments()
 	if i.whitelistSecondCount != 21600 {
-		t.Errorf("Expected 3600 seconds, got '%v'", i.whitelistSecondCount)
+		t.Errorf("Expected 21600 seconds, got '%v'", i.whitelistSecondCount)
 	}
 }
 
