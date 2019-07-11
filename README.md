@@ -87,8 +87,8 @@ $ helm upgrade estafette-gke-preemptible-killer \
 export NAMESPACE=estafette
 export APP_NAME=estafette-gke-preemptible-killer
 export TEAM_NAME=tooling
-export VERSION=1.1.15
-export GO_PIPELINE_LABEL=1.1.15
+export VERSION=1.1.19
+export GO_PIPELINE_LABEL=1.1.19
 export GOOGLE_SERVICE_ACCOUNT=$(cat google_service_account.json | base64)
 export DRAIN_TIMEOUT=300
 export INTERVAL=600
