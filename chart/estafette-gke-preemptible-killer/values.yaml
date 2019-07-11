@@ -15,6 +15,10 @@ rbac:
   # If true, create & use RBAC resources
   create: false
 
+
+blacklistHours: "09:00 - 12:00, 13:00 - 18:00"
+whitelistHours: "09:00 - 12:00, 13:00 - 18:00"
+
 revisionHistoryLimit: 10
 
 drainTimeout: 300
