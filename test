@@ -1,0 +1,17 @@
+#!/bin/bash
+
+script_path=$(dirname "$(readlink -f "${0}")")
+kind delete cluster &> /dev/null
+unset KUBECONFIG
+kind create cluster --config "${script_path}/kind-example-config.yaml" 2> /dev/null || true
+export KUBECONFIG=$(kind get kubeconfig-path --name='kind')
+for n in "" {2..3}; do
+  kubectl get node "kind-worker${n}" -o yaml > "${script_path}/a.yaml"
+  sed -i '/^  labels:/a \ \ \ \ cloud.google.com/gke-preemptible: "true"' "${script_path}/a.yaml"
+  kubectl replace -f "${script_path}/a.yaml"
+done
+rm -f "${script_path}/a.yaml"
+timeout 5s "${script_path}/estafette-gke-preemptible-killer" "${@}"
+for n in "" {2..3}; do
+  kubectl describe node kind-worker${n} | grep -E 'CreationTimestamp|estafette.io/gke-preemptible-killer-state'
+done
