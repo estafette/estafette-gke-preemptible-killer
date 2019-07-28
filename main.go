@@ -86,9 +86,6 @@ var (
 func init() {
 	// Metrics have to be registered to be exposed:
 	prometheus.MustRegister(nodeTotals)
-
-	whitelistInstance.blacklist = *blacklist
-	whitelistInstance.whitelist = *whitelist
 }
 
 func main() {
@@ -96,6 +93,8 @@ func main() {
 
 	initializeLogger()
 
+	whitelistInstance.blacklist = *blacklist
+	whitelistInstance.whitelist = *whitelist
 	whitelistInstance.parseArguments()
 
 	kubernetes, err := NewKubernetesClient(os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT"),
