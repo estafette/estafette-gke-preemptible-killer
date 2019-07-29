@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/go-intervals/timespanset"
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -78,43 +77,39 @@ func (w *WhitelistInstance) parseArguments() {
 
 // getExpiryDate calculates the expiry date of a node.
 func (w *WhitelistInstance) getExpiryDate(t time.Time, timeToBeAdded time.Duration) (expiryDatetime time.Time) {
-	offset := 0 * time.Second
 	truncatedCreationTime := t.Truncate(24 * time.Hour)
 	projectedCreation := whitelistStart.Add(t.Sub(truncatedCreationTime))
 
+	first := true
 	for timeToBeAdded > 0 {
-		// If the expiry date time is bound to surpass the 24h hard limit...
-		if offset >= 48*time.Hour {
-			// Let the user know and fallback to no whitelist.
-			log.Error().Msg(`Falling back to no whitelists. Contact
-				maintainer, whitelist resolution is wrong, it surpasses the
-				24h hard limit of preemptible nodes.`)
-			w.initialize()
-			w.whitelist = ""
-			w.blacklist = ""
-			w.parseArguments()
-			return w.getExpiryDate(t, timeToBeAdded)
-		}
-
 		// For all whitelisted intervals...
 		w.whitelistHours.IntervalsBetween(whitelistStart, whitelistEnd, func(start, end time.Time) bool {
-			// If the current interval ends before the creation...
-			if offset == 0 && end.Before(projectedCreation) {
-				// Skip for now.
-				return true
-			}
+			// For the first iteration only...
+			if first {
+				// If the current interval ends before the creation...
+				if end.Before(projectedCreation) {
+					// Skip for now.
+					return true
+				}
 
-			// If creation is in the middle of the current interval...
-			if offset == 0 && start.Before(projectedCreation) {
-				// Start with creation.
-				start = projectedCreation
+				// If creation is in the middle of the current interval...
+				if start.Before(projectedCreation) {
+					// Start with creation.
+					start = projectedCreation
+				}
 			}
 
 			// If expiry time has been reached...
 			intervalDuration := end.Sub(start)
 			if timeToBeAdded <= intervalDuration {
 				// This is it, project it back to real time.
-				expiryDatetime = truncatedCreationTime.Add(start.Add(timeToBeAdded).Sub(whitelistStart)).Add(offset)
+				expiryDatetime = truncatedCreationTime.Add(start.Add(timeToBeAdded).Sub(whitelistStart))
+				// But if expiryDatetime is before creation...
+				fmt.Println("before creation? " + expiryDatetime.String() + " " + t.String())
+				if expiryDatetime.Before(t) {
+					// Simply add 24h.
+					expiryDatetime = expiryDatetime.Add(24 * time.Hour)
+				}
 			}
 
 			// Consume this interval.
@@ -124,12 +119,7 @@ func (w *WhitelistInstance) getExpiryDate(t time.Time, timeToBeAdded time.Durati
 			return timeToBeAdded > 0
 		})
 
-		// Advancing to the next set of intervals means advancing another 24h in the expiry date
-		// time, but this is not effective in the times used above since they repeat in the same
-		// interval, so this offset brings that advance into effect. This does not make the expiry
-		// date time surpass the 24h hard limit of preemptible nodes. AN offset of 24h would mean
-		// 24h since truncatedCreationTime meaning it is the next day, but before usual deletion.
-		offset += 24 * time.Hour
+		first = false
 	}
 	return expiryDatetime
 }
