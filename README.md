@@ -137,3 +137,12 @@ go build && ./estafette-gke-preemptible-killer -i 10
 
 Note: `KUBECONFIG=~/.kube/config` as environment variable can also be used if you don't want to use the `kubectl proxy`
 command.
+
+For an all-in-one script that launches a kind cluster with 3 nodes, runs
+`estafette-gke-preemptible-killer` and then reports on the kill time, run:
+```
+go build && ./scripts/all-in-one-test -i 10
+```
+where `-i 10` are the arguments to be passed to
+`estafette-gke-preemptible-killer`, replace with your own test arguments.
+For safety, it does not remove the kind cluster it leaves behind.
