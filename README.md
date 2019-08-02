@@ -106,9 +106,8 @@ curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-kille
 
 ### Deploy with Kustomize
 
-Create a kustomize file:
+Create a `kustomization.yaml` file:
 
-`kustomization.yaml`
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -126,6 +125,8 @@ secretGenerator:
   - google-service-account.json=google_service_account.json
   type: "Opaque"
 ```
+
+Apply manifests:
 
 ```bash
 kubectl apply -k .
