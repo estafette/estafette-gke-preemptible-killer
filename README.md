@@ -104,7 +104,32 @@ curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-kille
 curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/kubernetes.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
 ```
 
+### Deploy with Kustomize
 
+Create a kustomize file:
+
+`kustomization.yaml`
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: default
+commonLabels:
+  app: preemptible-killer
+bases:
+- github.com/coryodaniel/estafette-gke-preemptible-killer//manifests
+images:
+- name: estafette/estafette-gke-preemptible-killer
+  newTag: 1.1.21
+secretGenerator:
+- name: preemptible-killer-secrets
+  files:
+  - google-service-account.json=google_service_account.json
+  type: "Opaque"
+```
+
+```bash
+kubectl apply -k .
+```
 
 ## Development
 
