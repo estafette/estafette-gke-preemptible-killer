@@ -5,10 +5,6 @@ metadata:
 spec:
   replicas: 1
   template:
-    metadata:
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "9001"
     spec:
       serviceAccountName: preemptible-killer
       terminationGracePeriodSeconds: 300
