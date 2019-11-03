@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	stdlog "log"
 	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -40,14 +42,19 @@ var (
 			Envar("DRAIN_TIMEOUT").
 			Default("300").
 			Int()
-	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
-			Envar("KUBECONFIG").
-			String()
+	filters = kingpin.Flag("filters", "label filters in the form of `key1: value1[, value2[, ...]][; key2: value3[, value4[, ...]]]`").
+		Default("").
+		Envar("FILTERS").
+		Short('f').
+		String()
 	interval = kingpin.Flag("interval", "Time in second to wait between each node check.").
 			Envar("INTERVAL").
 			Default("600").
 			Short('i').
 			Int()
+	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
+			Envar("KUBECONFIG").
+			String()
 	prometheusAddress = kingpin.Flag("metrics-listen-address", "The address to listen on for Prometheus metrics requests.").
 				Envar("METRICS_LISTEN_ADDRESS").
 				Default(":9001").
@@ -80,6 +87,7 @@ var (
 
 	// Various internals
 	randomEstafette   = rand.New(rand.NewSource(time.Now().UnixNano()))
+	labelFilters      = map[string]string{}
 	whitelistInstance WhitelistInstance
 )
 
@@ -92,6 +100,19 @@ func main() {
 	kingpin.Parse()
 
 	initializeLogger()
+
+	*filters = strings.Replace(*filters, " ", "", -1)
+	pairs := strings.Split(*filters, ";")
+	for _, pair := range pairs {
+		keyValue := strings.Split(pair, ":")
+
+		// Check format.
+		if len(keyValue) != 2 {
+			panic(fmt.Sprintf("filter '%v' should be of the form `label_key: label_value`", keyValue))
+		}
+
+		labelFilters[keyValue[0]] = keyValue[1]
+	}
 
 	whitelistInstance.blacklist = *blacklist
 	whitelistInstance.whitelist = *whitelist
@@ -130,7 +151,7 @@ func main() {
 
 			sleepTime := ApplyJitter(*interval)
 
-			nodes, err := kubernetes.GetPreemptibleNodes()
+			nodes, err := kubernetes.GetPreemptibleNodes(labelFilters)
 
 			if err != nil {
 				log.Error().Err(err).Msg("Error while getting the list of preemptible nodes")
