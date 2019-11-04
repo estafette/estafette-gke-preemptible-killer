@@ -42,7 +42,7 @@ var (
 			Envar("DRAIN_TIMEOUT").
 			Default("300").
 			Int()
-	filters = kingpin.Flag("filters", "label filters in the form of `key1: value1[, value2[, ...]][; key2: value3[, value4[, ...]]]`").
+	filters = kingpin.Flag("filters", "Label filters in the form of `key1: value1[, value2[, ...]][; key2: value3[, value4[, ...]], ...]`").
 		Default("").
 		Envar("FILTERS").
 		Short('f').
