@@ -41,13 +41,14 @@ You can either use environment variables or flags to configure the following set
 
 | Environment variable   | Flag                     | Default  | Description
 | ---------------------- | ------------------------ | -------- | -----------------------------------------------------------------
-| BLACKLIST_HOURS        | --blacklist-hours        |          | List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is NOT allowed
+| BLACKLIST_HOURS        | --blacklist-hours (-b)   |          | List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is NOT allowed
 | DRAIN_TIMEOUT          | --drain-timeout          | 300      | Max time in second to wait before deleting a node
+| FILTERS                | --filters (-f)           |          | Label filters in the form of `key1: value1[, value2[, ...]][; key2: value3[, value4[, ...]], ...]`
 | INTERVAL               | --interval (-i)          | 600      | Time in second to wait between each node check
 | KUBECONFIG             | --kubeconfig             |          | Provide the path to the kube config path, usually located in ~/.kube/config. This argument is only needed if you're running the killer outside of your k8s cluster
 | METRICS_LISTEN_ADDRESS | --metrics-listen-address | :9001    | The address to listen on for Prometheus metrics requests
 | METRICS_PATH           | --metrics-path           | /metrics | The path to listen for Prometheus metrics requests
-| WHITELIST_HOURS        | --whitelist-hours        |          | List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed and preferred
+| WHITELIST_HOURS        | --whitelist-hours (-w)   |          | List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed and preferred
 
 ### Create a Google Service Account
 

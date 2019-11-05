@@ -23,7 +23,7 @@ type KubernetesClient interface {
 	DrainKubeDNSFromNode(string, int) error
 	GetNode(string) (*apiv1.Node, error)
 	DeleteNode(string) error
-	GetPreemptibleNodes() (*apiv1.NodeList, error)
+	GetPreemptibleNodes(map[string]string) (*apiv1.NodeList, error)
 	GetProjectIdAndZoneFromNode(string) (string, string, error)
 	SetNodeAnnotation(string, string, string) error
 	SetUnschedulableState(string, bool) error
@@ -83,9 +83,13 @@ func (k *Kubernetes) GetProjectIdAndZoneFromNode(name string) (projectId string,
 }
 
 // GetPreemptibleNodes return a list of preemptible node
-func (k *Kubernetes) GetPreemptibleNodes() (nodes *apiv1.NodeList, err error) {
+func (k *Kubernetes) GetPreemptibleNodes(filters map[string]string) (nodes *apiv1.NodeList, err error) {
 	labels := new(k8s.LabelSelector)
 	labels.Eq("cloud.google.com/gke-preemptible", "true")
+	for key, value := range filters {
+		values := strings.Split(value, ",")
+		labels.In(key, values...)
+	}
 	nodes, err = k.Client.CoreV1().ListNodes(context.Background(), labels.Selector())
 	return
 }
