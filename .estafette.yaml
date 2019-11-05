@@ -2,7 +2,7 @@ builder:
   track: dev
 
 labels:
-  app-group: estafette-various
+  app-group: estafette-controllers
   team: estafette-team
   language: golang
 
