@@ -76,48 +76,23 @@ $ gcloud iam --project=$project_id service-accounts keys create \
     google_service_account.json
 ```
 
-### Deploy with Helm
+## Installation
 
-```bash
-# Prepare Helm/Tiller
-$ kubectl create sa tiller -n kube-system
-$ helm init --service-account tiller
-$ kubectl create clusterrolebinding tiller \
-    --clusterrole=cluster-admin \
-    --serviceaccount=kube-system:tiller
+Prepare using Helm:
 
-# Install
-$ helm upgrade estafette-gke-preemptible-killer \
-    --namespace estafette \
-    --install \
-    --set rbac.create=true \
-    --set-file googleServiceAccount=./google_service_account.json \
-    ./chart/estafette-gke-preemptible-killer
+```
+brew install kubernetes-helm
+kubectl -n kube-system create serviceaccount tiller
+kubectl create clusterrolebinding tiller --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
+helm init --service-account tiller --wait
 ```
 
-### Deploy without Helm
+Then install or upgrade with Helm:
 
-```bash
-export NAMESPACE=estafette
-export APP_NAME=estafette-gke-preemptible-killer
-export TEAM_NAME=tooling
-export VERSION=1.1.21
-export GO_PIPELINE_LABEL=1.1.21
-export GOOGLE_SERVICE_ACCOUNT=$(cat google_service_account.json | base64)
-export DRAIN_TIMEOUT=300
-export INTERVAL=600
-export CPU_REQUEST=10m
-export MEMORY_REQUEST=16Mi
-export CPU_LIMIT=50m
-export MEMORY_LIMIT=128Mi
-
-# Setup RBAC
-curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/rbac.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
-
-# Run application
-curl https://raw.githubusercontent.com/estafette/estafette-gke-preemptible-killer/master/kubernetes.yaml | envsubst | kubectl apply -n ${NAMESPACE} -f -
 ```
-
+helm repo add estafette https://helm.estafette.io
+helm upgrade --install estafette-gke-preemptible-killer --namespace estafette estafette/estafette-gke-preemptible-killer
+```
 ### Deploy with Kustomize
 
 Create a `kustomization.yaml` file:

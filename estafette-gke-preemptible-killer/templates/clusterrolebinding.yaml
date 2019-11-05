@@ -1,0 +1,16 @@
+{{- if .Values.rbac.enable -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+  labels:
+{{ include "estafette-gke-preemptible-killer.labels" . | indent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "estafette-gke-preemptible-killer.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end -}}

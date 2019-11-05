@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "estafette-gke-preemptible-killer.labels" . | indent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9101"
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      serviceAccountName: {{ template "estafette-gke-preemptible-killer.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ template "estafette-gke-preemptible-killer.imageTag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: DRAIN_TIMEOUT
+              value: {{ .Values.drainTimeout | quote }}
+            - name: INTERVAL
+              value: {{ .Values.interval | quote }}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /etc/app-secrets/google-service-account.json
+            {{- toYaml .Values.extraEnv | nindent 12 }}
+          ports:
+            - name: metrics
+              containerPort: 9101
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 30
+            timeoutSeconds: 1
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+          - name: app-secrets
+            mountPath: /etc/app-secrets
+      terminationGracePeriodSeconds: 300
+      volumes:
+      - name: app-secrets
+        secret:
+          secretName: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}

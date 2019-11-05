@@ -1,0 +1,2 @@
+1. Get the application logs by running this command:
+kubectl logs -f -l app={{ include "estafette-gke-preemptible-killer.fullname" . }} -n {{ .Release.Namespace }}

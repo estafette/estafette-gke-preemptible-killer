@@ -1,0 +1,72 @@
+# Default values for estafette-gke-preemptible-killer.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: estafette/estafette-gke-preemptible-killer
+  tag:
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name:
+
+rbac:
+  # Specifies whether roles and bindings should be created
+  enable: true
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 15Mi
+  limits:
+    cpu: 25m
+    memory: 50Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 10
+      preference:
+        matchExpressions:
+        - key: cloud.google.com/gke-preemptible
+          operator: In
+          values:
+          - "true"
+
+# time to wait for a node to drain before deleting it
+drainTimeout: 300
+
+# time to wait between checking nodes
+interval: 300
+
+# can be used to set additional environment variables
+extraEnv: {}
+
+secret:
+  # sets a json keyfile for a gcp service account
+  googleServiceAccountKeyfileJson: "{}"
