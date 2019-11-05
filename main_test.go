@@ -45,7 +45,7 @@ func (k *FakeKubernetes) SetUnschedulableState(name string, unschedulable bool) 
 	return nil
 }
 
-func (k *FakeKubernetes) GetPreemptibleNodes() (*apiv1.NodeList, error) {
+func (k *FakeKubernetes) GetPreemptibleNodes(map[string]string) (*apiv1.NodeList, error) {
 	return &apiv1.NodeList{}, nil
 }
 
