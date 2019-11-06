@@ -64,8 +64,11 @@ drainTimeout: 300
 # time to wait between checking nodes
 interval: 300
 
-# can be used to set additional environment variables
+# use to set extra environment variables
 extraEnv: {}
+
+# use to add extra labels
+extraLabels: {}
 
 secret:
   # sets a json keyfile for a gcp service account

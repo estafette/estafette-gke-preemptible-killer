@@ -11,11 +11,12 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+      app.kubernetes.io/name: {{ include "estafette-gke-preemptible-killer.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        app: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+{{ include "estafette-gke-preemptible-killer.labels" . | indent 8 }}
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9101"
@@ -40,7 +41,10 @@ spec:
               value: {{ .Values.interval | quote }}
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /etc/app-secrets/google-service-account.json
-            {{- toYaml .Values.extraEnv | nindent 12 }}
+            {{- range $key, $value := .Values.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value }}
+            {{- end }}
           ports:
             - name: metrics
               containerPort: 9101
