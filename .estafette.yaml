@@ -39,14 +39,12 @@ stages:
   lint-helm-chart:
     image: alpine/helm:2.15.1
     commands:
-    - helm init --client-only
     - helm lint ${ESTAFETTE_GIT_NAME}
 
   package-helm-chart:
     image: alpine/helm:2.15.1
     commands:
-    - helm init --client-only
-    - helm package --app-version ${ESTAFETTE_BUILD_VERSION} --version ${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0-pre-${ESTAFETTE_BUILD_VERSION_PATCH} ${ESTAFETTE_GIT_NAME}
+    - helm package --save false --app-version ${ESTAFETTE_BUILD_VERSION} --version ${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0-pre-${ESTAFETTE_BUILD_VERSION_PATCH} ${ESTAFETTE_GIT_NAME}
 
   test-helm-chart:
     services:
@@ -110,7 +108,7 @@ releases:
       package-helm-chart:
         image: alpine/helm:2.15.1
         commands:
-        - helm package --app-version ${ESTAFETTE_BUILD_VERSION} --version ${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0 ${ESTAFETTE_GIT_NAME}
+        - helm package --save false --app-version ${ESTAFETTE_BUILD_VERSION} --version ${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0 ${ESTAFETTE_GIT_NAME}
 
       clone-charts-repo:
         image: extensions/git-clone:dev
