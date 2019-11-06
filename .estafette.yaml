@@ -95,6 +95,7 @@ releases:
       publish-helm-chart:
         image: extensions/helm:dev
         action: publish
+        purgePrerelease: true
 
       create-github-release:
         image: extensions/github-release:dev
