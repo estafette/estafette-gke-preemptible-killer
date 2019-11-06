@@ -72,7 +72,7 @@ stages:
     - kubectl create clusterrolebinding tiller --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
     - helm init --service-account tiller --wait
     - helm template --name ${ESTAFETTE_GIT_NAME} ${ESTAFETTE_GIT_NAME}-${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0-pre-${ESTAFETTE_BUILD_VERSION_PATCH}.tgz --namespace estafette
-    - helm upgrade --install ${ESTAFETTE_GIT_NAME} ${ESTAFETTE_GIT_NAME}-${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0-pre-${ESTAFETTE_BUILD_VERSION_PATCH}.tgz --namespace estafette --wait || (kubectl logs -l app.kubernetes.io/name=${ESTAFETTE_GIT_NAME},app.kubernetes.io/instance=${ESTAFETTE_GIT_NAME} -n estafette && exit 1)
+    - helm upgrade --install ${ESTAFETTE_GIT_NAME} ${ESTAFETTE_GIT_NAME}-${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0-pre-${ESTAFETTE_BUILD_VERSION_PATCH}.tgz --namespace estafette --wait --timeout 120 || (kubectl logs -l app.kubernetes.io/name=${ESTAFETTE_GIT_NAME},app.kubernetes.io/instance=${ESTAFETTE_GIT_NAME} -n estafette && exit 1)
     - kubectl logs -l app.kubernetes.io/name=${ESTAFETTE_GIT_NAME},app.kubernetes.io/instance=${ESTAFETTE_GIT_NAME} -n estafette
 
   clone-charts-repo:
