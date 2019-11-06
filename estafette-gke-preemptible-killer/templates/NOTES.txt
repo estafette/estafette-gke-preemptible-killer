@@ -1,2 +1,2 @@
 1. Get the application logs by running this command:
-kubectl logs -f -l app={{ include "estafette-gke-preemptible-killer.fullname" . }} -n {{ .Release.Namespace }}
+kubectl logs -f -l app.kubernetes.io/name={{ include "estafette-gke-preemptible-killer.name" . }},app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}
