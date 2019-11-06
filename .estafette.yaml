@@ -37,14 +37,14 @@ stages:
     - estafette
 
   lint-helm-chart:
-    image: alpine/helm:2.15.1
-    commands:
-    - helm lint ${ESTAFETTE_GIT_NAME}
+    image: extensions/helm:dev
+    action: lint
+    prerelease: true
 
   package-helm-chart:
-    image: alpine/helm:2.15.1
-    commands:
-    - helm package --save=false --app-version ${ESTAFETTE_BUILD_VERSION} --version ${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0-pre-${ESTAFETTE_BUILD_VERSION_PATCH} ${ESTAFETTE_GIT_NAME}
+    image: extensions/helm:dev
+    action: package
+    prerelease: true
 
   test-helm-chart:
     services:
@@ -56,22 +56,9 @@ stages:
         readiness:
           path: /kubernetes-ready
           timeoutSeconds: 180
-    image: alpine/helm:2.15.1
-    env:
-      KUBERNETES_HOST: kubernetes
-    commands:
-    - apk add sed
-    - mkdir -p ~/.kube
-    - wget -q -O - http://${KUBERNETES_HOST}:10080/config | sed -e "s/localhost/${KUBERNETES_HOST}/" > ~/.kube/config
-    - wget -O /usr/local/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/v1.15.1/bin/linux/amd64/kubectl
-    - chmod +x /usr/local/bin/kubectl
-    - kubectl version
-    - kubectl -n kube-system create serviceaccount tiller
-    - kubectl create clusterrolebinding tiller --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
-    - helm init --service-account tiller --wait
-    - helm template --name ${ESTAFETTE_GIT_NAME} ${ESTAFETTE_GIT_NAME}-${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0-pre-${ESTAFETTE_BUILD_VERSION_PATCH}.tgz --namespace estafette
-    - helm upgrade --install ${ESTAFETTE_GIT_NAME} ${ESTAFETTE_GIT_NAME}-${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0-pre-${ESTAFETTE_BUILD_VERSION_PATCH}.tgz --namespace estafette --wait --timeout 120 || (kubectl logs -l app.kubernetes.io/name=${ESTAFETTE_GIT_NAME},app.kubernetes.io/instance=${ESTAFETTE_GIT_NAME} -n estafette && exit 1)
-    - kubectl logs -l app.kubernetes.io/name=${ESTAFETTE_GIT_NAME},app.kubernetes.io/instance=${ESTAFETTE_GIT_NAME} -n estafette
+    image: extensions/helm:dev
+    action: test
+    prerelease: true
 
   clone-charts-repo:
     image: extensions/git-clone:dev
@@ -79,18 +66,9 @@ stages:
     branch: master
 
   publish-helm-chart:
-    image: alpine/helm:2.15.1
-    commands:
-    - apk add git
-    - mkdir -p helm-charts/charts
-    - cp *.tgz helm-charts/charts
-    - cd helm-charts
-    - helm repo index --url https://helm.estafette.io/ --merge index.yaml .
-    - git config --global user.email "bot@estafette.io"
-    - git config --global user.name "Estafette bot"
-    - git add --all
-    - git commit --allow-empty -m "${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0-pre-${ESTAFETTE_BUILD_VERSION_PATCH}"
-    - git push origin master
+    image: extensions/helm:dev
+    action: publish
+    prerelease: true
 
   slack-notify:
     image: extensions/slack-build-status:dev
@@ -106,9 +84,8 @@ releases:
     clone: true
     stages:
       package-helm-chart:
-        image: alpine/helm:2.15.1
-        commands:
-        - helm package --save=false --app-version ${ESTAFETTE_BUILD_VERSION} --version ${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0 ${ESTAFETTE_GIT_NAME}
+        image: extensions/helm:dev
+        action: package
 
       clone-charts-repo:
         image: extensions/git-clone:dev
@@ -116,18 +93,8 @@ releases:
         branch: master
 
       publish-helm-chart:
-        image: alpine/helm:2.15.1
-        commands:
-        - apk add git
-        - mkdir -p helm-charts/charts
-        - cp *.tgz helm-charts/charts
-        - cd helm-charts
-        - helm repo index --url https://helm.estafette.io/ --merge index.yaml .
-        - git config --global user.email "bot@estafette.io"
-        - git config --global user.name "Estafette bot"
-        - git add --all
-        - git commit --allow-empty -m "${ESTAFETTE_BUILD_VERSION_MAJOR}.${ESTAFETTE_BUILD_VERSION_MINOR}.0"
-        - git push origin master
+        image: extensions/helm:dev
+        action: publish
 
       create-github-release:
         image: extensions/github-release:dev
