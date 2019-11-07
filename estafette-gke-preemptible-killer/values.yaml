@@ -79,4 +79,4 @@ extraPodLabels: {}
 
 secret:
   # sets a json keyfile for a gcp service account
-  googleServiceAccountKeyfileJson: "{}"
+  googleServiceAccountKeyfileJson: '{"type": "service_account"}'
