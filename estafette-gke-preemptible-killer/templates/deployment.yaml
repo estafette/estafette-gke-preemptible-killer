@@ -51,7 +51,7 @@ spec:
             - name: INTERVAL
               value: {{ .Values.interval | quote }}
             - name: GOOGLE_APPLICATION_CREDENTIALS
-              value: /etc/app-secrets/google-service-account.json
+              value: /gcp-service-account/service-account-key.json
             {{- range $key, $value := .Values.extraEnv }}
             - name: {{ $key }}
               value: {{ $value }}
@@ -69,11 +69,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-          - name: app-secrets
-            mountPath: /etc/app-secrets
+          - name: gcp-service-account-secret
+            mountPath: /gcp-service-account
       terminationGracePeriodSeconds: 300
       volumes:
-      - name: app-secrets
+      - name: gcp-service-account-secret
         secret:
           secretName: {{ include "estafette-gke-preemptible-killer.fullname" . }}
       {{- with .Values.nodeSelector }}

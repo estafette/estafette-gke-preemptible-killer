@@ -78,5 +78,8 @@ extraLabels: {}
 extraPodLabels: {}
 
 secret:
+  # when using estafette-gcp-service account controller to fetch key files, set this to true and leave googleServiceAccountKeyfileJson empty
+  useGcpServiceAccountAnnotation: false
+
   # sets a json keyfile for a gcp service account
   googleServiceAccountKeyfileJson: '{"type": "service_account"}'
