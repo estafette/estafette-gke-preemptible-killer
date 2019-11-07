@@ -4,19 +4,16 @@ import (
 	"fmt"
 	stdlog "log"
 	"math/rand"
-	"net/http"
 	"os"
-	"os/signal"
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/alecthomas/kingpin"
 	apiv1 "github.com/ericchiang/k8s/api/v1"
+	foundation "github.com/estafette/estafette-foundation"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -55,14 +52,6 @@ var (
 	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
 			Envar("KUBECONFIG").
 			String()
-	prometheusAddress = kingpin.Flag("metrics-listen-address", "The address to listen on for Prometheus metrics requests.").
-				Envar("METRICS_LISTEN_ADDRESS").
-				Default(":9001").
-				String()
-	prometheusMetricsPath = kingpin.Flag("metrics-path", "The path to listen for Prometheus metrics requests.").
-				Envar("METRICS_PATH").
-				Default("/metrics").
-				String()
 	whitelist = kingpin.Flag("whitelist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed and preferred").
 			Envar("WHITELIST_HOURS").
 			Default("").
@@ -79,6 +68,8 @@ var (
 	)
 
 	// application version
+	appgroup  string
+	app       string
 	version   string
 	branch    string
 	revision  string
@@ -97,9 +88,14 @@ func init() {
 }
 
 func main() {
+	// parse command line parameters
 	kingpin.Parse()
 
-	initializeLogger()
+	// configure json logging
+	foundation.InitLogging(appgroup, app, version, branch, revision, buildDate)
+
+	// configure prometheus metrics endpoint
+	foundation.InitMetrics()
 
 	*filters = strings.Replace(*filters, " ", "", -1)
 	pairs := strings.Split(*filters, ";")
@@ -120,29 +116,12 @@ func main() {
 
 	kubernetes, err := NewKubernetesClient(os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT"),
 		os.Getenv("KUBERNETES_NAMESPACE"), *kubeConfigPath)
-
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error initializing Kubernetes client")
 	}
 
-	// start prometheus
-	go func() {
-		log.Info().
-			Str("port", *prometheusAddress).
-			Str("path", *prometheusMetricsPath).
-			Msg("Serving Prometheus metrics...")
-
-		http.Handle(*prometheusMetricsPath, promhttp.Handler())
-
-		if err := http.ListenAndServe(*prometheusAddress, nil); err != nil {
-			log.Fatal().Err(err).Msg("Starting Prometheus listener failed")
-		}
-	}()
-
 	// define channel and wait group to gracefully shutdown the application
-	gracefulShutdown := make(chan os.Signal)
-	signal.Notify(gracefulShutdown, syscall.SIGTERM, syscall.SIGINT)
-	waitGroup := &sync.WaitGroup{}
+	gracefulShutdown, waitGroup := foundation.InitGracefulShutdownHandling()
 
 	// process nodes
 	go func(waitGroup *sync.WaitGroup) {
@@ -182,13 +161,8 @@ func main() {
 		}
 	}(waitGroup)
 
-	signalReceived := <-gracefulShutdown
-	log.Info().
-		Msgf("Received signal %v. Sending shutdown and waiting on goroutines...", signalReceived)
-
-	waitGroup.Wait()
-
-	log.Info().Msg("Shutting down...")
+	// handle graceful shutdown after sigterm
+	foundation.HandleGracefulShutdown(gracefulShutdown, waitGroup)
 }
 
 func initializeLogger() {
