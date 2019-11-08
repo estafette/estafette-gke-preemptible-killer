@@ -2,6 +2,27 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+#
+# APPLICATION SETTINGS
+#
+
+# time to wait for a node to drain before deleting it
+drainTimeout: 300
+
+# time to wait between checking nodes
+interval: 300
+
+secret:
+  # when using estafette-gcp-service account controller to fetch key files, set this to true and leave googleServiceAccountKeyfileJson empty
+  useGcpServiceAccountAnnotation: false
+
+  # sets a json keyfile for a gcp service account
+  googleServiceAccountKeyfileJson: '{"type": "service_account"}'
+
+#
+# GENERIC SETTINGS
+#
+
 replicaCount: 1
 
 image:
@@ -59,12 +80,6 @@ affinity:
           values:
           - "true"
 
-# time to wait for a node to drain before deleting it
-drainTimeout: 300
-
-# time to wait between checking nodes
-interval: 300
-
 # pass (additional) arguments to the container
 extraArgs: []
 
@@ -76,10 +91,3 @@ extraLabels: {}
 
 # use to add extra labels to podspec for getting their values in prometheus
 extraPodLabels: {}
-
-secret:
-  # when using estafette-gcp-service account controller to fetch key files, set this to true and leave googleServiceAccountKeyfileJson empty
-  useGcpServiceAccountAnnotation: false
-
-  # sets a json keyfile for a gcp service account
-  googleServiceAccountKeyfileJson: '{"type": "service_account"}'
