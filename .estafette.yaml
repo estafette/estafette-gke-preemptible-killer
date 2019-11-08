@@ -11,7 +11,7 @@ version:
     major: 1
     minor: 3
     patch: 0
-    labelTemplate: 'beta-{{auto}}'
+    labelTemplate: '{{branch}}-{{auto}}'
     releaseBranch: 1.3.0
 
 stages:
