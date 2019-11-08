@@ -4,4 +4,4 @@ description: Kubernetes controller to spread preemption for preemtible VMs in GK
 name: estafette-gke-preemptible-killer
 version: 0.1.0
 home: https://helm.estafette.io
-icon: https://estafette.io/apple-touch-icon.png
+icon: https://helm.estafette.io/icon.png
