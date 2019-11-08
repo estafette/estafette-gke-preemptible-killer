@@ -42,12 +42,10 @@ stages:
   lint-helm-chart:
     image: extensions/helm:dev
     action: lint
-    version: ${ESTAFETTE_BUILD_VERSION}
 
   package-helm-chart:
     image: extensions/helm:dev
     action: package
-    version: ${ESTAFETTE_BUILD_VERSION}
 
   test-helm-chart:
     services:
@@ -61,7 +59,6 @@ stages:
           timeoutSeconds: 180
     image: extensions/helm:dev
     action: test
-    version: ${ESTAFETTE_BUILD_VERSION}
 
   clone-charts-repo:
     image: extensions/git-clone:dev
@@ -71,7 +68,6 @@ stages:
   publish-helm-chart:
     image: extensions/helm:dev
     action: publish
-    version: ${ESTAFETTE_BUILD_VERSION}
 
   slack-notify:
     image: extensions/slack-build-status:dev
@@ -84,9 +80,15 @@ stages:
 
 releases:
   release:
-    clone: true
     stages:
+      clone-charts-repo:
+        image: extensions/git-clone:dev
+        repo: helm-charts
+        branch: master
+
+      purge-prerelease-helm-charts:
+        image: extensions/helm:dev
+        action: purge
+
       create-github-release:
         image: extensions/github-release:dev
-        version: ${ESTAFETTE_BUILD_VERSION}
-        closeMilestone: true
