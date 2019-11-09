@@ -101,7 +101,7 @@ func main() {
 
 	initializeLogger()
 
-	if filters != "" {
+	if *filters != "" {
 		*filters = strings.Replace(*filters, " ", "", -1)
 		pairs := strings.Split(*filters, ";")
 		for _, pair := range pairs {
