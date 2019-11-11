@@ -97,17 +97,19 @@ func main() {
 	// configure prometheus metrics endpoint
 	foundation.InitMetrics()
 
-	*filters = strings.Replace(*filters, " ", "", -1)
-	pairs := strings.Split(*filters, ";")
-	for _, pair := range pairs {
-		keyValue := strings.Split(pair, ":")
+	if *filters != "" {
+		*filters = strings.Replace(*filters, " ", "", -1)
+		pairs := strings.Split(*filters, ";")
+		for _, pair := range pairs {
+			keyValue := strings.Split(pair, ":")
 
-		// Check format.
-		if len(keyValue) != 2 {
-			panic(fmt.Sprintf("filter '%v' should be of the form `label_key: label_value`", keyValue))
+			// Check format.
+			if len(keyValue) != 2 {
+				panic(fmt.Sprintf("filter '%v' should be of the form `label_key: label_value`", keyValue))
+			}
+
+			labelFilters[keyValue[0]] = keyValue[1]
 		}
-
-		labelFilters[keyValue[0]] = keyValue[1]
 	}
 
 	whitelistInstance.blacklist = *blacklist

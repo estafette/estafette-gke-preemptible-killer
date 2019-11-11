@@ -3,3 +3,5 @@ appVersion: "1.0"
 description: Kubernetes controller to spread preemption for preemtible VMs in GKE to avoid mass deletion after 24 hours
 name: estafette-gke-preemptible-killer
 version: 0.1.0
+home: https://helm.estafette.io
+icon: https://helm.estafette.io/icon.png
