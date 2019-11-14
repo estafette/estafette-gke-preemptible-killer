@@ -27,4 +27,12 @@ rules:
   - create
   - get
   - update
+- apiGroups: [""] # "" indicates the core/v1 API group
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - delete
+  - update
 {{- end -}}
