@@ -47,6 +47,8 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           env:
+            - name: "ESTAFETTE_LOG_FORMAT"
+              value: "{{ .Values.logFormat }}"
             - name: DRAIN_TIMEOUT
               value: {{ .Values.drainTimeout | quote }}
             - name: INTERVAL

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	stdlog "log"
 	"math/rand"
 	"os"
 	"runtime"
@@ -14,7 +13,6 @@ import (
 	apiv1 "github.com/ericchiang/k8s/api/v1"
 	foundation "github.com/estafette/estafette-foundation"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -91,8 +89,8 @@ func main() {
 	// parse command line parameters
 	kingpin.Parse()
 
-	// configure json logging
-	foundation.InitLogging(appgroup, app, version, branch, revision, buildDate)
+	// init log format from envvar ESTAFETTE_LOG_FORMAT
+	foundation.InitLoggingFromEnv(appgroup, app, version, branch, revision, buildDate)
 
 	// configure prometheus metrics endpoint
 	foundation.InitMetrics()
@@ -165,30 +163,6 @@ func main() {
 
 	// handle graceful shutdown after sigterm
 	foundation.HandleGracefulShutdown(gracefulShutdown, waitGroup)
-}
-
-func initializeLogger() {
-	// log as severity for stackdriver logging to recognize the level
-	zerolog.LevelFieldName = "severity"
-
-	// set some default fields added to all logs
-	log.Logger = zerolog.New(os.Stdout).With().
-		Timestamp().
-		Str("app", "estafette-gke-preemptible-killer").
-		Str("version", version).
-		Logger()
-
-	// use zerolog for any logs sent via standard log library
-	stdlog.SetFlags(0)
-	stdlog.SetOutput(log.Logger)
-
-	// log startup message
-	log.Info().
-		Str("branch", branch).
-		Str("revision", revision).
-		Str("buildDate", buildDate).
-		Str("goVersion", goVersion).
-		Msg("Starting estafette-gke-preemptible-killer...")
 }
 
 // getCurrentNodeState return the state of the node by reading its metadata annotations
