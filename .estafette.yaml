@@ -72,6 +72,8 @@ stages:
         port: 10080
     image: extensions/helm:dev
     action: test
+    values: |-
+      nonExistingValue: with-a-random-value
 
   clone-charts-repo:
     image: extensions/git-clone:dev
