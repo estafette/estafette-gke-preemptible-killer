@@ -65,10 +65,10 @@ spec:
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /metrics
-              port: metrics
+              path: /liveness
+              port: 5000
             initialDelaySeconds: 30
-            timeoutSeconds: 1
+            timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
