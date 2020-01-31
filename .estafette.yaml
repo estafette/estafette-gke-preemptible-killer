@@ -18,7 +18,7 @@ stages:
   build-lint-and-package:
     parallelStages:
       build:
-        image: golang:1.13.6-alpine3.11
+        image: golang:1.13.7-alpine3.11
         env:
           CGO_ENABLED: 0
           GOOS: linux
