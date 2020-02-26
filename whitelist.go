@@ -105,7 +105,6 @@ func (w *WhitelistInstance) getExpiryDate(t time.Time, timeToBeAdded time.Durati
 				// This is it, project it back to real time.
 				expiryDatetime = truncatedCreationTime.Add(start.Add(timeToBeAdded).Sub(whitelistStart))
 				// But if expiryDatetime is before creation...
-				fmt.Println("before creation? " + expiryDatetime.String() + " " + t.String())
 				if expiryDatetime.Before(t) {
 					// Simply add 24h.
 					expiryDatetime = expiryDatetime.Add(24 * time.Hour)

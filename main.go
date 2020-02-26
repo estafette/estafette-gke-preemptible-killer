@@ -211,10 +211,10 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 	if len(*minimumKillInterval) != 0 {
 		s := expiryDatetime.Add(-minimumKillDuration)
 		e := expiryDatetime.Add(minimumKillDuration)
-		interval := fmt.Sprintf("%2.0d", s.Hour()) + ":" +
-			fmt.Sprintf("%2.0d", s.Minute()) + " - " +
-			fmt.Sprintf("%2.0d", e.Hour()) + ":" +
-			fmt.Sprintf("%2.0d", e.Minute())
+		interval := fmt.Sprintf("%2d", s.Hour()) + ":" +
+			fmt.Sprintf("%2d", s.Minute()) + " - " +
+			fmt.Sprintf("%2d", e.Hour()) + ":" +
+			fmt.Sprintf("%2d", e.Minute())
 		whitelistInstance.processHours(interval, "-")
 	}
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
