@@ -50,15 +50,11 @@ type WhitelistInstance struct {
 
 	// whitelistHours are whitelist periods
 	whitelistHours *timespanset.Set
-
-	// whitelistSecondCount is the total number of seconds cumulated from all the whitelist periods combined
-	whitelistSecondCount int
 }
 
 // initializeWhitelistHours initializes data structures by taking command line arguments into account.
 func (w *WhitelistInstance) initialize() {
 	w.whitelistHours = timespanset.Empty()
-	w.whitelistSecondCount = 0
 }
 
 func (w *WhitelistInstance) parseArguments() {
@@ -72,7 +68,11 @@ func (w *WhitelistInstance) parseArguments() {
 	}
 
 	w.processHours(w.blacklist, "-")
-	w.whitelistHours.IntervalsBetween(whitelistStart, whitelistEnd, w.updateWhitelistSecondCount)
+}
+
+func (w *WhitelistInstance) isEmpty() bool {
+	s, e := w.whitelistHours.Extent()
+	return s.IsZero() && e.IsZero()
 }
 
 // getExpiryDate calculates the expiry date of a node.
@@ -176,13 +176,4 @@ func (w *WhitelistInstance) processHours(input string, direction string) {
 		// Merge timespans.
 		w.mergeTimespans(start, end, direction)
 	}
-}
-
-// updateWhitelistSecondCount adds the difference between two times to an accumulator.
-func (w *WhitelistInstance) updateWhitelistSecondCount(start, end time.Time) bool {
-	if end.Before(start) {
-		panic(fmt.Sprintf("updateWhitelistSecondCount(): go-intervals timespanset is acting up providing reverse intervals: %v - %v", start, end))
-	}
-	w.whitelistSecondCount += int(end.Sub(start).Seconds())
-	return true
 }

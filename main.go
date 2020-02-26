@@ -50,6 +50,11 @@ var (
 	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
 			Envar("KUBECONFIG").
 			String()
+	minimumKillInterval = kingpin.Flag("minimum-kill-interval", "minimum time interval between kills e.g. 30m25s").
+				Envar("MINIMUM_KILL_INTERVAL").
+				Default("").
+				Short('m').
+				String()
 	whitelist = kingpin.Flag("whitelist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed and preferred").
 			Envar("WHITELIST_HOURS").
 			Default("").
@@ -75,9 +80,10 @@ var (
 	goVersion = runtime.Version()
 
 	// Various internals
-	randomEstafette   = rand.New(rand.NewSource(time.Now().UnixNano()))
-	labelFilters      = map[string]string{}
-	whitelistInstance WhitelistInstance
+	randomEstafette     = rand.New(rand.NewSource(time.Now().UnixNano()))
+	labelFilters        = map[string]string{}
+	minimumKillDuration time.Duration
+	whitelistInstance   WhitelistInstance
 )
 
 func init() {
@@ -114,6 +120,14 @@ func main() {
 		}
 	}
 
+	if len(*minimumKillInterval) != 0 {
+		var err error
+		minimumKillDuration, err = time.ParseDuration(*minimumKillInterval)
+		if err != nil {
+			panic(fmt.Sprintf("minimum kill interval '%v' should be of duration form e.g. 13h37m", *minimumKillInterval))
+		}
+	}
+
 	whitelistInstance.blacklist = *blacklist
 	whitelistInstance.whitelist = *whitelist
 	whitelistInstance.parseArguments()
@@ -143,7 +157,7 @@ func main() {
 				continue
 			}
 
-			log.Info().Msgf("Cluster has %v preemptible nodes", len(nodes.Items))
+			log.Info().Msgf("Cluster has %v preemptible nodes.", len(nodes.Items))
 
 			for _, node := range nodes.Items {
 				waitGroup.Add(1)
@@ -184,12 +198,27 @@ func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 // getDesiredNodeState define the state of the node, update node annotations if not present
 func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreemptibleKillerState, err error) {
 	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0).UTC()
-	drainTimeoutTime := time.Duration(*drainTimeout) * time.Second
-	// 43200 = 12h * 60m * 60s
-	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout)) * time.Second
-	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0to12
+	drainTimeoutDereferenced := *drainTimeout
+	drainTimeoutTime := time.Duration(drainTimeoutDereferenced) * time.Second
+	// 43200 [seconds] = 12 [hours] * 60 [minutes] * 60 [seconds]
+	randomTimeBetween0And12 := time.Duration(randomEstafette.Intn((43200)-drainTimeoutDereferenced)) * time.Second
+	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0And12
 
+	if whitelistInstance.isEmpty() {
+		panic("minimum kill interval is too high")
+	}
 	expiryDatetime := whitelistInstance.getExpiryDate(t, timeToBeAdded)
+	if len(*minimumKillInterval) != 0 {
+		s := expiryDatetime.Add(-minimumKillDuration)
+		e := expiryDatetime.Add(minimumKillDuration)
+		interval := fmt.Sprintf("%2.0d", s.Hour()) + ":" +
+			fmt.Sprintf("%2.0d", s.Minute()) + " - " +
+			fmt.Sprintf("%2.0d", e.Hour()) + ":" +
+			fmt.Sprintf("%2.0d", e.Minute())
+		fmt.Println(expiryDatetime)
+		fmt.Println(interval)
+		whitelistInstance.processHours(interval, "-")
+	}
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
 
 	log.Info().

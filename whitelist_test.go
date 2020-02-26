@@ -97,37 +97,3 @@ func TestProcessHours(t *testing.T) {
 		t.Errorf("Expected 21600 seconds, got '%v'", i.whitelistSecondCount)
 	}
 }
-
-func TestUpdateWhitelistSecondCount(t *testing.T) {
-	var i WhitelistInstance
-	i.initialize()
-
-	// Check that basic scenario works.
-	i.updateWhitelistSecondCount(a, b)
-	if i.whitelistSecondCount != 3600 {
-		t.Errorf("Expected 3600 seconds, got '%v'", i.whitelistSecondCount)
-	}
-	i.whitelistSecondCount = 0
-
-	// Check that adding a multi-day interval works.
-	i.updateWhitelistSecondCount(b, c)
-	if i.whitelistSecondCount != 10811040 {
-		t.Errorf("Expected 10811040 seconds, got '%v'", i.whitelistSecondCount)
-	}
-	i.whitelistSecondCount = 0
-
-	// Check that adding a zero interval doesn't change second count.
-	i.updateWhitelistSecondCount(a, a)
-	if i.whitelistSecondCount != 0 {
-		t.Errorf("Expected 0 seconds, got '%v'", i.whitelistSecondCount)
-	}
-	i.whitelistSecondCount = 0
-
-	// Check that adding a reverse interval panics.
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("Expected panic when adding '%v - %v'", b, a)
-		}
-	}()
-	i.updateWhitelistSecondCount(b, a)
-}
