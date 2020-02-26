@@ -5,9 +5,14 @@ set -euo pipefail
 # Get script path.
 script_path=$(dirname "$(readlink -f "${0}")")
 
+# Cleanup
+for t in HUP INT QUIT KILL TERM EXIT; do
+  trap "rm -f '${script_path}/a.log' '${script_path}/a.yaml' '${script_path}/kube-config.yaml'" "${t}"
+done
+
 # Create cluster using YAML provided in quick start guide of kind.
 kind create cluster --config "${script_path}/kind-example-config.yaml" || true
-export KUBECONFIG=$(kind get kubeconfig-path --name='kind')
+kind get kubeconfig > "${script_path}/kube-config.yaml"
 
 # For all the nodes, export it's configuration to YAML, add gke-preemptible
 # annotation, delete any previous killer state, then replace the configuration.
@@ -18,12 +23,12 @@ for n in '' {2..3}; do
   kubectl replace -f "${script_path}/a.yaml"
 done
 
-# Cleanup
-rm -f "${script_path}/a.yaml"
-
 # Run estafette-gke-preemptible-killer with all the arguments provided to this
 # script.
-timeout 5s "${script_path}/../estafette-gke-preemptible-killer" "${@}" || true
+"${script_path}/../estafette-gke-preemptible-killer" "${@}" --kubeconfig "${script_path}/kube-config.yaml" | tee "${script_path}/a.log" &
+pid=${!}
+"${script_path}/wait-for-line-in-file" 'Sleeping for' "${script_path}/a.log"
+kill ${pid}
 
 # For all the nodes report their CreationTimestamp and their
 # gke-preemptible-killer-state.
