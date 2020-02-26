@@ -50,7 +50,7 @@ var (
 	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
 			Envar("KUBECONFIG").
 			String()
-	minimumKillInterval = kingpin.Flag("minimum-kill-interval", "minimum time interval between kills e.g. 30m25s").
+	minimumKillInterval = kingpin.Flag("minimum-kill-interval", "Minimum time interval between kills e.g. 13h37m").
 				Envar("MINIMUM_KILL_INTERVAL").
 				Default("").
 				Short('m').
@@ -215,8 +215,6 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 			fmt.Sprintf("%2.0d", s.Minute()) + " - " +
 			fmt.Sprintf("%2.0d", e.Hour()) + ":" +
 			fmt.Sprintf("%2.0d", e.Minute())
-		fmt.Println(expiryDatetime)
-		fmt.Println(interval)
 		whitelistInstance.processHours(interval, "-")
 	}
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
