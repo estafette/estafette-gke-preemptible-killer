@@ -53,8 +53,10 @@ spec:
               value: {{ .Values.drainTimeout | quote }}
             - name: INTERVAL
               value: {{ .Values.interval | quote }}
+            {{- if not .Values.secret.workloadIdentityServiceAccount }}
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /gcp-service-account/service-account-key.json
+            {{- end }}
             {{- range $key, $value := .Values.extraEnv }}
             - name: {{ $key }}
               value: {{ $value }}
@@ -71,14 +73,18 @@ spec:
             timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if not .Values.secret.workloadIdentityServiceAccount }}
           volumeMounts:
           - name: gcp-service-account-secret
             mountPath: /gcp-service-account
+          {{- end }}
       terminationGracePeriodSeconds: 300
+      {{- if not .Values.secret.workloadIdentityServiceAccount }}
       volumes:
       - name: gcp-service-account-secret
         secret:
           secretName: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
