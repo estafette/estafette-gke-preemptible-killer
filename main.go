@@ -80,10 +80,11 @@ var (
 	goVersion = runtime.Version()
 
 	// Various internals
-	randomEstafette     = rand.New(rand.NewSource(time.Now().UnixNano()))
-	labelFilters        = map[string]string{}
-	minimumKillDuration time.Duration
-	whitelistInstance   WhitelistInstance
+	randomEstafette                   = rand.New(rand.NewSource(time.Now().UnixNano()))
+	labelFilters                      = map[string]string{}
+	minimumKillDuration               time.Duration
+	whitelistInstance                 WhitelistInstance
+	firstMinimumKillTimeIntervalError = false
 )
 
 func init() {
@@ -92,7 +93,6 @@ func init() {
 }
 
 func main() {
-
 	// parse command line parameters
 	kingpin.Parse()
 
@@ -174,6 +174,8 @@ func main() {
 				}
 			}
 
+			firstMinimumKillTimeIntervalError = false
+
 			log.Info().Msgf("Sleeping for %v seconds...", sleepTime)
 			time.Sleep(time.Duration(sleepTime) * time.Second)
 		}
@@ -205,8 +207,18 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0And12
 
 	if whitelistInstance.isEmpty() {
-		panic("minimum kill interval is too high")
+		if firstMinimumKillTimeIntervalError {
+			// Whitelist instance was empty two times in a row, it means minimum
+			// kill interval is too high for the current set of nodes.
+			panic("minimum kill interval is too high")
+		}
+
+		// Reset whitelist instance and try again one more time.
+		whitelistInstance = initialWhitelistInstance
+		firstMinimumKillTimeIntervalError = true
+		return GKEPreemptibleKillerState{}, nil
 	}
+
 	expiryDatetime := whitelistInstance.getExpiryDate(t, timeToBeAdded)
 	if len(*minimumKillInterval) != 0 {
 		s := expiryDatetime.Add(-minimumKillDuration)
@@ -250,6 +262,10 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 	// set node state if doesn't already have annotations
 	if state.ExpiryDatetime == "" {
 		state, _ = getDesiredNodeState(k, node)
+		if firstMinimumKillTimeIntervalError {
+			// It will panic this time if minimum kill interval is too high.
+			state, _ = getDesiredNodeState(k, node)
+		}
 	}
 
 	// compute time difference

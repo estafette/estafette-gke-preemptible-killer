@@ -20,8 +20,9 @@ const (
 )
 
 var (
-	whitelistStart time.Time
-	whitelistEnd   time.Time
+	whitelistStart           time.Time
+	whitelistEnd             time.Time
+	initialWhitelistInstance WhitelistInstance
 )
 
 func init() {
@@ -68,6 +69,7 @@ func (w *WhitelistInstance) parseArguments() {
 	}
 
 	w.processHours(w.blacklist, "-")
+	initialWhitelistInstance = *w
 }
 
 func (w *WhitelistInstance) isEmpty() bool {
