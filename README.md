@@ -105,7 +105,7 @@ namespace: default
 commonLabels:
   app: preemptible-killer
 bases:
-- github.com/coryodaniel/estafette-gke-preemptible-killer//manifests
+- github.com/estafette/estafette-gke-preemptible-killer//manifests
 images:
 - name: estafette/estafette-gke-preemptible-killer
   newTag: 1.1.21
