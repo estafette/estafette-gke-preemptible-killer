@@ -86,11 +86,15 @@ func init() {
 }
 
 func main() {
+
 	// parse command line parameters
 	kingpin.Parse()
 
 	// init log format from envvar ESTAFETTE_LOG_FORMAT
-	foundation.InitLoggingFromEnv(appgroup, app, version, branch, revision, buildDate)
+	foundation.InitLoggingFromEnv(foundation.NewApplicationInfo(appgroup, app, version, branch, revision, buildDate))
+
+	// init /liveness endpoint
+	foundation.InitLiveness()
 
 	// configure prometheus metrics endpoint
 	foundation.InitMetrics()

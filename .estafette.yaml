@@ -10,15 +10,15 @@ version:
   semver:
     major: 1
     minor: 2
-    patch: 4
+    patch: 6
     labelTemplate: '{{branch}}-{{auto}}'
-    releaseBranch: 1.2.4
+    releaseBranch: 1.2.6
 
 stages:
   build-lint-and-package:
     parallelStages:
       build:
-        image: golang:1.13.4-alpine3.10
+        image: golang:1.13.7-alpine3.11
         env:
           CGO_ENABLED: 0
           GOOS: linux
