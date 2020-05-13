@@ -100,3 +100,16 @@ extraLabels: {}
 
 # use to add extra labels to podspec for getting their values in prometheus
 extraPodLabels: {}
+
+# prometheus monitoring
+prometheus:
+  enabled: true
+  servicemonitor:
+    # if service monitor is enabled pormetheus scraping annotions are removed
+    enabled: false
+    prometheusInstance: default
+    targetPort: 9101
+    path: /metrics
+    interval: 60s
+    scrapeTimeout: 30s
+    labels: {}
