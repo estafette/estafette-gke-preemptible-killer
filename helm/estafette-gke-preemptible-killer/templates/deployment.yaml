@@ -80,10 +80,20 @@ spec:
           {{- end }}
       terminationGracePeriodSeconds: 300
       {{- if not .Values.secret.workloadIdentityServiceAccount }}
+      {{- if .Values.secret.googleServiceAccountSecret.name}}
+      volumes:
+      - name: gcp-service-account-secret
+        secret:
+          secretName: {{ .Values.secret.googleServiceAccountSecret.name }}
+          items:
+          - key: {{ .Values.secret.googleServiceAccountSecret.key }}
+            path: service-account-key.json
+      {{- else }}
       volumes:
       - name: gcp-service-account-secret
         secret:
           secretName: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+      {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
