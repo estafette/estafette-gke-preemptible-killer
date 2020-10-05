@@ -50,6 +50,11 @@ var (
 	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
 			Envar("KUBECONFIG").
 			String()
+	minimumKillInterval = kingpin.Flag("minimum-kill-interval", "Minimum time interval between kills e.g. 13h37m").
+				Envar("MINIMUM_KILL_INTERVAL").
+				Default("").
+				Short('m').
+				String()
 	whitelist = kingpin.Flag("whitelist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed and preferred").
 			Envar("WHITELIST_HOURS").
 			Default("").
@@ -75,9 +80,11 @@ var (
 	goVersion = runtime.Version()
 
 	// Various internals
-	randomEstafette   = rand.New(rand.NewSource(time.Now().UnixNano()))
-	labelFilters      = map[string]string{}
-	whitelistInstance WhitelistInstance
+	randomEstafette                   = rand.New(rand.NewSource(time.Now().UnixNano()))
+	labelFilters                      = map[string]string{}
+	minimumKillDuration               time.Duration
+	whitelistInstance                 WhitelistInstance
+	firstMinimumKillTimeIntervalError = false
 )
 
 func init() {
@@ -86,7 +93,6 @@ func init() {
 }
 
 func main() {
-
 	// parse command line parameters
 	kingpin.Parse()
 
@@ -111,6 +117,14 @@ func main() {
 			}
 
 			labelFilters[keyValue[0]] = keyValue[1]
+		}
+	}
+
+	if len(*minimumKillInterval) != 0 {
+		var err error
+		minimumKillDuration, err = time.ParseDuration(*minimumKillInterval)
+		if err != nil {
+			panic(fmt.Sprintf("minimum kill interval '%v' should be of duration form e.g. 13h37m", *minimumKillInterval))
 		}
 	}
 
@@ -143,7 +157,7 @@ func main() {
 				continue
 			}
 
-			log.Info().Msgf("Cluster has %v preemptible nodes", len(nodes.Items))
+			log.Info().Msgf("Cluster has %v preemptible nodes.", len(nodes.Items))
 
 			for _, node := range nodes.Items {
 				waitGroup.Add(1)
@@ -159,6 +173,8 @@ func main() {
 					continue
 				}
 			}
+
+			firstMinimumKillTimeIntervalError = false
 
 			log.Info().Msgf("Sleeping for %v seconds...", sleepTime)
 			time.Sleep(time.Duration(sleepTime) * time.Second)
@@ -184,12 +200,35 @@ func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 // getDesiredNodeState define the state of the node, update node annotations if not present
 func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreemptibleKillerState, err error) {
 	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0).UTC()
-	drainTimeoutTime := time.Duration(*drainTimeout) * time.Second
-	// 43200 = 12h * 60m * 60s
-	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout)) * time.Second
-	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0to12
+	drainTimeoutDereferenced := *drainTimeout
+	drainTimeoutTime := time.Duration(drainTimeoutDereferenced) * time.Second
+	// 43200 [seconds] = 12 [hours] * 60 [minutes] * 60 [seconds]
+	randomTimeBetween0And12 := time.Duration(randomEstafette.Intn((43200)-drainTimeoutDereferenced)) * time.Second
+	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0And12
+
+	if whitelistInstance.isEmpty() {
+		if firstMinimumKillTimeIntervalError {
+			// Whitelist instance was empty two times in a row, it means minimum
+			// kill interval is too high for the current set of nodes.
+			panic("minimum kill interval is too high")
+		}
+
+		// Reset whitelist instance and try again one more time.
+		whitelistInstance = initialWhitelistInstance
+		firstMinimumKillTimeIntervalError = true
+		return GKEPreemptibleKillerState{}, nil
+	}
 
 	expiryDatetime := whitelistInstance.getExpiryDate(t, timeToBeAdded)
+	if len(*minimumKillInterval) != 0 {
+		s := expiryDatetime.Add(-minimumKillDuration)
+		e := expiryDatetime.Add(minimumKillDuration)
+		interval := fmt.Sprintf("%2d", s.Hour()) + ":" +
+			fmt.Sprintf("%2d", s.Minute()) + " - " +
+			fmt.Sprintf("%2d", e.Hour()) + ":" +
+			fmt.Sprintf("%2d", e.Minute())
+		whitelistInstance.processHours(interval, "-")
+	}
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
 
 	log.Info().
@@ -223,6 +262,10 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 	// set node state if doesn't already have annotations
 	if state.ExpiryDatetime == "" {
 		state, _ = getDesiredNodeState(k, node)
+		if firstMinimumKillTimeIntervalError {
+			// It will panic this time if minimum kill interval is too high.
+			state, _ = getDesiredNodeState(k, node)
+		}
 	}
 
 	// compute time difference
