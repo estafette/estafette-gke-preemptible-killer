@@ -55,6 +55,11 @@ var (
 			Default("").
 			Short('w').
 			String()
+	coolDowntime = kingpin.Flag("cool-down-time", "Time, in seconds, to wait between deletion of nodes").
+			Envar("COOL_DOWN_TIME").
+			Default("600").
+			Short('c').
+			Int64()
 
 	// define prometheus counter
 	nodeTotals = prometheus.NewCounterVec(
@@ -321,6 +326,10 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 				Msg("Error deleting GCloud instance")
 			return
 		}
+
+		timerDeletion := time.NewTimer(time.Duration(*coolDowntime) * time.Second)
+
+		<-timerDeletion.C
 
 		nodeTotals.With(prometheus.Labels{"status": "killed"}).Inc()
 
