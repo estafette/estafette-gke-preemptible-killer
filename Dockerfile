@@ -1,17 +1,20 @@
-FROM golang:1.14-buster AS build
+FROM golang:1.15.2-alpine3.12 AS build
 
 ENV GOBIN=$GOPATH/bin
+
+ENV CGO_ENABLED="0" \
+    GOOS="linux"
 
 ADD . /src/estafette-gke-preemptible-killer
 
 WORKDIR /src/estafette-gke-preemptible-killer
 
-RUN apt-get -qqq update \
-    && apt-get -qqq -y install ca-certificates\
-    && update-ca-certificates
+RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/*
+RUN update-ca-certificates
 
-RUN go mod download \
-    && go build ./...
+RUN go test ./... \
+    && go build -a -installsuffix cgo -ldflags "-X main.version=${ESTAFETTE_BUILD_VERSION} -X main.revision=${ESTAFETTE_GIT_REVISION} -X main.branch=${ESTAFETTE_GIT_BRANCH} -X main.buildDate=${ESTAFETTE_BUILD_DATETIME}" .
+
 
 FROM debian:buster-slim
 
