@@ -255,29 +255,6 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 			return
 		}
 
-		var projectID string
-		var zone string
-		projectID, zone, err = k.GetProjectIdAndZoneFromNode(*node.Metadata.Name)
-
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("host", *node.Metadata.Name).
-				Msg("Error getting project id and zone from node")
-			return
-		}
-
-		var gcloud GCloudClient
-		gcloud, err = NewGCloudClient(projectID, zone)
-
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("host", *node.Metadata.Name).
-				Msg("Error creating GCloud client")
-			return
-		}
-
 		// drain kubernetes node
 		err = k.DrainNode(*node.Metadata.Name, *drainTimeout)
 
@@ -308,17 +285,6 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 				Err(err).
 				Str("host", *node.Metadata.Name).
 				Msg("Error deleting node")
-			return
-		}
-
-		// delete gcloud instance
-		err = gcloud.DeleteNode(*node.Metadata.Name)
-
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("host", *node.Metadata.Name).
-				Msg("Error deleting GCloud instance")
 			return
 		}
 

@@ -12,19 +12,6 @@ drainTimeout: 300
 # time to wait between checking nodes
 interval: 300
 
-secret:
-  # if set to true the values are already base64 encoded when provided, otherwise the template performs the base64 encoding
-  valuesAreBase64Encoded: false
-
-  # when using estafette-gcp-service account controller to fetch key files, set this to true and leave googleServiceAccountKeyfileJson empty
-  useGcpServiceAccountAnnotation: false
-
-  # when using workload identity set this to the Google Cloud Service Account
-  workloadIdentityServiceAccount: ""
-
-  # sets a json keyfile for a gcp service account
-  googleServiceAccountKeyfileJson: '{"type": "service_account"}'
-
 # the following log formats are available: plaintext, console, json, stackdriver, v3 (see https://github.com/estafette/estafette-foundation for more info)
 logFormat: plaintext
 

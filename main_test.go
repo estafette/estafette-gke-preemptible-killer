@@ -18,10 +18,6 @@ func FakeNewKubernetesClient() KubernetesClient {
 	return &FakeKubernetes{}
 }
 
-func (k *FakeKubernetes) GetProjectIdAndZoneFromNode(name string) (string, string, error) {
-	return "", "", nil
-}
-
 func (k *FakeKubernetes) DrainNode(node string, drainTimeout int) error {
 	return nil
 }

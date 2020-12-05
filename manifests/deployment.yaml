@@ -19,8 +19,6 @@ spec:
           value: "300"
         - name: INTERVAL
           value: "600"
-        - name: GOOGLE_APPLICATION_CREDENTIALS
-          value: /etc/preemptible-killer-secrets/google-service-account.json
         resources:
           requests:
             cpu: 10m
@@ -34,10 +32,3 @@ spec:
             port: prom-metrics
           initialDelaySeconds: 30
           timeoutSeconds: 1
-        volumeMounts:
-        - name: preemptible-killer-secrets
-          mountPath: /etc/preemptible-killer-secrets
-      volumes:
-      - name: preemptible-killer-secrets
-        secret:
-          secretName: preemptible-killer-secrets
