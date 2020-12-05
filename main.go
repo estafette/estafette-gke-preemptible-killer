@@ -4,16 +4,18 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/alecthomas/kingpin"
-	apiv1 "github.com/ericchiang/k8s/api/v1"
 	foundation "github.com/estafette/estafette-foundation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog/log"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/util/homedir"
 )
 
 const (
@@ -49,6 +51,7 @@ var (
 			Int()
 	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
 			Envar("KUBECONFIG").
+			Default(filepath.Join(homedir.HomeDir(), ".kube", "config")).
 			String()
 	whitelist = kingpin.Flag("whitelist-hours", "List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed and preferred").
 			Envar("WHITELIST_HOURS").
@@ -147,14 +150,14 @@ func main() {
 
 			for _, node := range nodes.Items {
 				waitGroup.Add(1)
-				err := processNode(kubernetes, node)
+				err := processNode(kubernetes, &node)
 				waitGroup.Done()
 
 				if err != nil {
 					nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
 					log.Error().
 						Err(err).
-						Str("host", *node.Metadata.Name).
+						Str("host", node.ObjectMeta.GetName()).
 						Msg("Error while processing node")
 					continue
 				}
@@ -170,10 +173,10 @@ func main() {
 }
 
 // getCurrentNodeState return the state of the node by reading its metadata annotations
-func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
+func getCurrentNodeState(node *v1.Node) (state GKEPreemptibleKillerState) {
 	var ok bool
 
-	state.ExpiryDatetime, ok = node.Metadata.Annotations[annotationGKEPreemptibleKillerState]
+	state.ExpiryDatetime, ok = node.GetObjectMeta().GetAnnotations()[annotationGKEPreemptibleKillerState]
 
 	if !ok {
 		state.ExpiryDatetime = ""
@@ -182,26 +185,26 @@ func getCurrentNodeState(node *apiv1.Node) (state GKEPreemptibleKillerState) {
 }
 
 // getDesiredNodeState define the state of the node, update node annotations if not present
-func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreemptibleKillerState, err error) {
-	t := time.Unix(*node.Metadata.CreationTimestamp.Seconds, 0).UTC()
+func getDesiredNodeState(k KubernetesClient, node *v1.Node) (state GKEPreemptibleKillerState, err error) {
+	t := node.GetObjectMeta().GetCreationTimestamp()
 	drainTimeoutTime := time.Duration(*drainTimeout) * time.Second
 	// 43200 = 12h * 60m * 60s
 	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout)) * time.Second
 	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0to12
 
-	expiryDatetime := whitelistInstance.getExpiryDate(t, timeToBeAdded)
+	expiryDatetime := whitelistInstance.getExpiryDate(t.Time, timeToBeAdded)
 	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
 
 	log.Info().
-		Str("host", *node.Metadata.Name).
+		Str("host", node.GetObjectMeta().GetName()).
 		Msgf("Annotation not found, adding %s to %s", annotationGKEPreemptibleKillerState, state.ExpiryDatetime)
 
-	err = k.SetNodeAnnotation(*node.Metadata.Name, annotationGKEPreemptibleKillerState, state.ExpiryDatetime)
+	err = k.SetNodeAnnotation(node.GetObjectMeta().GetName(), annotationGKEPreemptibleKillerState, state.ExpiryDatetime)
 
 	if err != nil {
 		log.Warn().
 			Err(err).
-			Str("host", *node.Metadata.Name).
+			Str("host", node.GetObjectMeta().GetName()).
 			Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
 
 		state.ExpiryDatetime = t.Format(time.RFC3339)
@@ -216,7 +219,7 @@ func getDesiredNodeState(k KubernetesClient, node *apiv1.Node) (state GKEPreempt
 }
 
 // processNode returns the time to delete a node after n minutes
-func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
+func processNode(k KubernetesClient, node *v1.Node) (err error) {
 	// get current node state
 	state := getCurrentNodeState(node)
 
@@ -229,10 +232,11 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 	now := time.Now().UTC()
 	expiryDatetime, err := time.Parse(time.RFC3339, state.ExpiryDatetime)
 
+	nodeName := node.GetObjectMeta().GetName()
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("host", *node.Metadata.Name).
+			Str("host", nodeName).
 			Msgf("Error parsing expiry datetime with value '%s'", state.ExpiryDatetime)
 		return
 	}
@@ -242,27 +246,27 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 	// check if we need to delete the node or not
 	if timeDiff < 0 {
 		log.Info().
-			Str("host", *node.Metadata.Name).
+			Str("host", nodeName).
 			Msgf("Node expired %.0f minute(s) ago, deleting...", timeDiff)
 
 		// set node unschedulable
-		err = k.SetUnschedulableState(*node.Metadata.Name, true)
+		err = k.SetUnschedulableState(nodeName, true)
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("host", *node.Metadata.Name).
+				Str("host", nodeName).
 				Msg("Error setting node to unschedulable state")
 			return
 		}
 
 		var projectID string
 		var zone string
-		projectID, zone, err = k.GetProjectIdAndZoneFromNode(*node.Metadata.Name)
+		projectID, zone, err = k.GetProjectIdAndZoneFromNode(nodeName)
 
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("host", *node.Metadata.Name).
+				Str("host", nodeName).
 				Msg("Error getting project id and zone from node")
 			return
 		}
@@ -273,51 +277,51 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("host", *node.Metadata.Name).
+				Str("host", nodeName).
 				Msg("Error creating GCloud client")
 			return
 		}
 
 		// drain kubernetes node
-		err = k.DrainNode(*node.Metadata.Name, *drainTimeout)
+		err = k.DrainNode(nodeName, *drainTimeout)
 
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("host", *node.Metadata.Name).
+				Str("host", nodeName).
 				Msg("Error draining kubernetes node")
 			return
 		}
 
 		// drain kube-dns from kubernetes node
-		err = k.DrainKubeDNSFromNode(*node.Metadata.Name, *drainTimeout)
+		err = k.DrainKubeDNSFromNode(nodeName, *drainTimeout)
 
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("host", *node.Metadata.Name).
+				Str("host", nodeName).
 				Msg("Error draining kube-dns from kubernetes node")
 			return
 		}
 
 		// delete node from kubernetes cluster
-		err = k.DeleteNode(*node.Metadata.Name)
+		err = k.DeleteNode(nodeName)
 
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("host", *node.Metadata.Name).
+				Str("host", nodeName).
 				Msg("Error deleting node")
 			return
 		}
 
 		// delete gcloud instance
-		err = gcloud.DeleteNode(*node.Metadata.Name)
+		err = gcloud.DeleteNode(nodeName)
 
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("host", *node.Metadata.Name).
+				Str("host", nodeName).
 				Msg("Error deleting GCloud instance")
 			return
 		}
@@ -325,7 +329,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 		nodeTotals.With(prometheus.Labels{"status": "killed"}).Inc()
 
 		log.Info().
-			Str("host", *node.Metadata.Name).
+			Str("host", nodeName).
 			Msg("Node deleted")
 
 		return
@@ -334,7 +338,7 @@ func processNode(k KubernetesClient, node *apiv1.Node) (err error) {
 	nodeTotals.With(prometheus.Labels{"status": "skipped"}).Inc()
 
 	log.Info().
-		Str("host", *node.Metadata.Name).
+		Str("host", nodeName).
 		Msgf("%.0f minute(s) to go before kill, keeping node", timeDiff)
 
 	return
