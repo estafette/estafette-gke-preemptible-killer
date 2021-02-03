@@ -73,7 +73,7 @@ $ gcloud projects add-iam-policy-binding $project_id \
     --role=projects/${project_id}/roles/preemptible_killer
 $ gcloud iam --project=$project_id service-accounts keys create \
     --iam-account $service_account_email \
-    google_service_account.json
+    google-service-account.json
 ```
 
 ## Installation
