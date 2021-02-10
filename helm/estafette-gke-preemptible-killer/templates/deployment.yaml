@@ -28,6 +28,9 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9101"
         checksum/secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- range $key, $value := .Values.extraPodAnnotations }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
     spec:
     {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
