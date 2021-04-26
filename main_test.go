@@ -1,60 +1,24 @@
 package main
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
 
-	"github.com/ericchiang/k8s"
-	apiv1 "github.com/ericchiang/k8s/api/v1"
-	metav1 "github.com/ericchiang/k8s/apis/meta/v1"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	gomock "github.com/golang/mock/gomock"
 	"github.com/rs/zerolog"
 )
-
-type FakeKubernetes struct {
-}
-
-func FakeNewKubernetesClient() KubernetesClient {
-	return &FakeKubernetes{}
-}
-
-func (k *FakeKubernetes) GetProjectIdAndZoneFromNode(name string) (string, string, error) {
-	return "", "", nil
-}
-
-func (k *FakeKubernetes) DrainNode(node string, drainTimeout int) error {
-	return nil
-}
-
-func (k *FakeKubernetes) DrainKubeDNSFromNode(node string, drainTimeout int) error {
-	return nil
-}
-
-func (k *FakeKubernetes) GetNode(name string) (*apiv1.Node, error) {
-	return &apiv1.Node{}, nil
-}
-
-func (k *FakeKubernetes) DeleteNode(name string) error {
-	return nil
-}
-
-func (k *FakeKubernetes) SetNodeAnnotation(name string, key string, value string) error {
-	return nil
-}
-func (k *FakeKubernetes) SetUnschedulableState(name string, unschedulable bool) error {
-	return nil
-}
-
-func (k *FakeKubernetes) GetPreemptibleNodes(map[string]string) (*apiv1.NodeList, error) {
-	return &apiv1.NodeList{}, nil
-}
 
 func TestGetCurrentNodeState(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.Disabled)
 
-	node := &apiv1.Node{
-		Metadata: &metav1.ObjectMeta{
-			Name: k8s.String("node-1"),
+	node := v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-1",
 			Annotations: map[string]string{
 				"estafette.io/gke-preemptible-killer-state": "2017-11-11T11:11:11Z",
 			},
@@ -71,22 +35,27 @@ func TestGetCurrentNodeState(t *testing.T) {
 func TestGetDesiredNodeState(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.Disabled)
 
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+
 	creationTimestamp := time.Date(2017, 11, 11, 12, 00, 00, 0, time.UTC)
-	creationTimestampUnix := creationTimestamp.Unix()
 	creationTimestamp12HoursLater := creationTimestamp.Add(12 * time.Hour)
 	creationTimestamp24HoursLater := creationTimestamp.Add(24 * time.Hour)
 
-	node := &apiv1.Node{
-		Metadata: &metav1.ObjectMeta{
-			Name:              k8s.String("node-1"),
-			CreationTimestamp: &metav1.Time{Seconds: &creationTimestampUnix},
+	node := v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "node-1",
+			CreationTimestamp: metav1.Time{Time: creationTimestamp},
 		},
 	}
 
-	client := FakeNewKubernetesClient()
+	client := NewMockKubernetesClient(ctrl)
+	client.EXPECT().SetNodeAnnotation(gomock.Any(), "node-1", "estafette.io/gke-preemptible-killer-state", gomock.Any()).AnyTimes()
 
 	whitelistInstance.parseArguments()
-	state, _ := getDesiredNodeState(client, node)
+	state, _ := getDesiredNodeState(ctx, client, node)
 	stateTS, _ := time.Parse(time.RFC3339, state.ExpiryDatetime)
 
 	if !creationTimestamp12HoursLater.Before(stateTS) && !creationTimestamp24HoursLater.After(stateTS) {
@@ -94,7 +63,7 @@ func TestGetDesiredNodeState(t *testing.T) {
 	}
 
 	randomEstafette = rand.New(rand.NewSource(0))
-	stateWithPreseed, _ := getDesiredNodeState(client, node)
+	stateWithPreseed, _ := getDesiredNodeState(ctx, client, node)
 	if stateWithPreseed.ExpiryDatetime != "2017-11-12T11:27:54Z" {
 		t.Errorf("Expect expiry date time to be 2017-11-12T11:27:54Z, instead got %s", stateWithPreseed.ExpiryDatetime)
 	}
