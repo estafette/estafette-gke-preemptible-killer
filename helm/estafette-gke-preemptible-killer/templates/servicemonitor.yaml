@@ -1,0 +1,28 @@
+{{- if and .Values.prometheus.enabled .Values.prometheus.servicemonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "estafette-gke-preemptible-killer.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "estafette-gke-preemptible-killer.labels" . | indent 4 }}
+    app.kubernetes.io/name: {{ include "estafette-gke-preemptible-killer.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    prometheus: {{ .Values.prometheus.servicemonitor.prometheusInstance }}
+{{- if .Values.prometheus.servicemonitor.labels }}
+{{ toYaml .Values.prometheus.servicemonitor.labels | indent 4}}
+{{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "estafette-gke-preemptible-killer.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+  - targetPort: {{ .Values.prometheus.servicemonitor.targetPort }}
+    path: {{ .Values.prometheus.servicemonitor.path }}
+    interval: {{ .Values.prometheus.servicemonitor.interval }}
+    scrapeTimeout: {{ .Values.prometheus.servicemonitor.scrapeTimeout }}
+{{- end }}
