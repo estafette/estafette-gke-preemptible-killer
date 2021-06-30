@@ -1,3 +1,4 @@
+---
 # Default values for estafette-gke-preemptible-killer.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
@@ -100,3 +101,6 @@ extraLabels: {}
 
 # use to add extra labels to podspec for getting their values in prometheus
 extraPodLabels: {}
+
+# use to add extra annotations to podspec
+extraPodAnnotations: {}
