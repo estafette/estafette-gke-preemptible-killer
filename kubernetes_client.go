@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/policy/v1beta1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
@@ -178,24 +182,22 @@ func (c *kubernetesClient) DrainNode(ctx context.Context, nodeName string, drain
 		Str("host", nodeName).
 		Msgf("%d pod(s) found", len(filteredPodList))
 
-	for _, pod := range filteredPodList {
-		log.Info().
-			Str("host", nodeName).
-			Msgf("Deleting pod %s", pod.ObjectMeta.Name)
-
-		err = c.kubeClientset.CoreV1().Pods(pod.ObjectMeta.Namespace).Delete(ctx, pod.ObjectMeta.Name, metav1.DeleteOptions{})
-
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("host", nodeName).
-				Msgf("Error draining pod %s", pod.ObjectMeta.Name)
-			continue
+	stopEvicting := make(chan bool)
+	stopPolling := make(chan bool)
+	errCh := make(chan error)
+	defer func() {
+		if len(errCh) > 0 {
+			err = <-errCh
 		}
-	}
+	}()
+
+	go func() {
+		if err := c.evictPods(ctx, filteredPodList, stopEvicting); err != nil {
+			errCh <- err
+		}
+	}()
 
 	doneDraining := make(chan bool)
-
 	// Wait until all pods are deleted
 	go func() {
 		for {
@@ -228,7 +230,12 @@ func (c *kubernetesClient) DrainNode(ctx context.Context, nodeName string, drain
 				Str("host", nodeName).
 				Msgf("%d pod(s) pending deletion, sleeping %ds", podsPending, sleepTime)
 
-			time.Sleep(sleepDuration)
+			select {
+			case <-stopPolling:
+				return
+			default:
+				time.Sleep(sleepDuration)
+			}
 		}
 	}()
 
@@ -239,6 +246,12 @@ func (c *kubernetesClient) DrainNode(ctx context.Context, nodeName string, drain
 		log.Warn().
 			Str("host", nodeName).
 			Msg("Draining node timeout reached")
+		close(stopPolling)
+		close(stopEvicting)
+		return
+	case <-ctx.Done():
+		close(stopPolling)
+		close(stopEvicting)
 		return
 	}
 
@@ -271,24 +284,22 @@ func (c *kubernetesClient) DrainKubeDNSFromNode(ctx context.Context, nodeName st
 		Str("host", nodeName).
 		Msgf("%d kube-dns pod(s) found", len(filteredPodList))
 
-	for _, pod := range filteredPodList {
-		log.Info().
-			Str("host", nodeName).
-			Msgf("Deleting pod %s", pod.ObjectMeta.Name)
-
-		err = c.kubeClientset.CoreV1().Pods(pod.ObjectMeta.Namespace).Delete(ctx, pod.ObjectMeta.Name, metav1.DeleteOptions{})
-
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("host", nodeName).
-				Msgf("Error draining pod %s", pod.ObjectMeta.Name)
-			continue
+	stopEvicting := make(chan bool)
+	stopPolling := make(chan bool)
+	errCh := make(chan error)
+	defer func() {
+		if len(errCh) > 0 {
+			err = <-errCh
 		}
-	}
+	}()
+
+	go func() {
+		if err := c.evictPods(ctx, filteredPodList, stopEvicting); err != nil {
+			errCh <- err
+		}
+	}()
 
 	doneDraining := make(chan bool)
-
 	// Wait until all pods are deleted
 	go func() {
 		for {
@@ -321,7 +332,12 @@ func (c *kubernetesClient) DrainKubeDNSFromNode(ctx context.Context, nodeName st
 				Str("host", nodeName).
 				Msgf("%d pod(s) pending deletion, sleeping %ds", podsPending, sleepTime)
 
-			time.Sleep(sleepDuration)
+			select {
+			case <-stopPolling:
+				return
+			default:
+				time.Sleep(sleepDuration)
+			}
 		}
 	}()
 
@@ -332,6 +348,12 @@ func (c *kubernetesClient) DrainKubeDNSFromNode(ctx context.Context, nodeName st
 		log.Warn().
 			Str("host", nodeName).
 			Msg("Draining kube-dns node timeout reached")
+		close(stopPolling)
+		close(stopEvicting)
+		return
+	case <-ctx.Done():
+		close(stopPolling)
+		close(stopEvicting)
 		return
 	}
 
@@ -340,4 +362,95 @@ func (c *kubernetesClient) DrainKubeDNSFromNode(ctx context.Context, nodeName st
 		Msg("Done draining kube-dns from node")
 
 	return
+}
+
+func (c *kubernetesClient) evictPods(ctx context.Context, pods []v1.Pod, stop <-chan bool) (lastErr error) {
+	podsPerBatch := 10
+	numPodsLeft := len(pods)
+	podsProcessedSoFar := 0
+	errCh := make(chan error)
+	defer func() {
+		if len(errCh) > 0 {
+			thisErr := <-errCh
+			lastErr = fmt.Errorf("error evicting pods, last error was: %s", thisErr.Error())
+		}
+	}()
+
+	for numPodsLeft > 0 {
+		numPodsThisBatch := int(math.Min(float64(numPodsLeft), float64(podsPerBatch)))
+		podsThisBatch := pods[podsProcessedSoFar : podsProcessedSoFar+numPodsThisBatch]
+		stopChs := make([]chan bool, numPodsThisBatch)
+		for i := 0; i < len(stopChs); i++ {
+			stopChs[i] = make(chan bool)
+		}
+		wg := &sync.WaitGroup{}
+		for i := 0; i < numPodsThisBatch; i++ {
+			wg.Add(1)
+			go func(i int) {
+				thisPod := podsThisBatch[i]
+				if err := c.evictPod(ctx, thisPod, stopChs[i]); err != nil {
+					log.Error().
+						Err(err).
+						Msgf("failed to evict pod %s", thisPod.Name)
+					errCh <- err
+				}
+				wg.Done()
+			}(i)
+		}
+
+		select {
+		case <-stop:
+			for _, ch := range stopChs {
+				close(ch)
+			}
+			return
+		default:
+			wg.Wait()
+			numPodsLeft -= numPodsThisBatch
+			podsProcessedSoFar += numPodsThisBatch
+		}
+	}
+	return
+}
+
+func (c *kubernetesClient) evictPod(ctx context.Context, pod v1.Pod, stop <-chan bool) error {
+	log.Info().
+		Str("host", pod.Spec.NodeName).
+		Msgf("Evicting pod %s", pod.Name)
+	eviction := &v1beta1.Eviction{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+		},
+	}
+	for {
+		err := c.kubeClientset.PolicyV1beta1().Evictions(eviction.Namespace).Evict(ctx, eviction)
+		if err == nil {
+			log.Info().
+				Msgf("pod %s evicted", pod.Name)
+			break
+		} else if errors.IsNotFound(err) {
+			log.Info().
+				Msgf("pod %s already gone", pod.Name)
+			break
+		} else if errors.IsTooManyRequests(err) { //We get a 429 in the case of disruption budget related failures
+			log.Info().
+				Err(err).
+				Msgf("too many evictions while evicting %s, this may be due to pod disruption budget. trying again soon", pod.Name)
+			time.Sleep(5 * time.Second)
+		} else if errors.IsForbidden(err) && errors.HasStatusCause(err, v1.NamespaceTerminatingCause) {
+			log.Warn().
+				Msgf("cannot evict %s, namespace is being deleted", pod.Name)
+			//namespace is being deleted, finalizers should take care of deleting the pod
+			break
+		} else {
+			return err
+		}
+		select {
+		case <-stop:
+			return nil
+		default:
+		}
+	}
+	return nil
 }
