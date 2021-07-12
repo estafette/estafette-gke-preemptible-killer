@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -32,7 +31,7 @@ func TestGetCurrentNodeState(t *testing.T) {
 	}
 }
 
-func TestGetDesiredNodeState(t *testing.T) {
+func TestGetDesiredNodeState_BetweenTwelveAndTwentyFour(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.Disabled)
 
 	ctrl := gomock.NewController(t)
@@ -41,8 +40,9 @@ func TestGetDesiredNodeState(t *testing.T) {
 	ctx := context.Background()
 
 	creationTimestamp := time.Date(2017, 11, 11, 12, 00, 00, 0, time.UTC)
-	creationTimestamp12HoursLater := creationTimestamp.Add(12 * time.Hour)
-	creationTimestamp24HoursLater := creationTimestamp.Add(24 * time.Hour)
+	certainlyDeadBy := creationTimestamp.Add(24 * time.Hour).Add(1 * time.Minute)
+	twelveAfterCreation := creationTimestamp.Add(12 * time.Hour)
+	now := creationTimestamp.Add(4 * time.Hour)
 
 	node := v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -55,16 +55,52 @@ func TestGetDesiredNodeState(t *testing.T) {
 	client.EXPECT().SetNodeAnnotation(gomock.Any(), "node-1", "estafette.io/gke-preemptible-killer-state", gomock.Any()).AnyTimes()
 
 	whitelistInstance.parseArguments()
-	state, _ := getDesiredNodeState(ctx, client, node)
+	state, _ := getDesiredNodeState(now, ctx, client, node)
 	stateTS, _ := time.Parse(time.RFC3339, state.ExpiryDatetime)
 
-	if !creationTimestamp12HoursLater.Before(stateTS) && !creationTimestamp24HoursLater.After(stateTS) {
+	if stateTS.Before(now) && !stateTS.Before(certainlyDeadBy) && !stateTS.After(twelveAfterCreation) {
 		t.Errorf("Expect expiry date time to be between 12 and 24h after the creation date %s, instead got %s", creationTimestamp, state.ExpiryDatetime)
 	}
 
-	randomEstafette = rand.New(rand.NewSource(0))
-	stateWithPreseed, _ := getDesiredNodeState(ctx, client, node)
-	if stateWithPreseed.ExpiryDatetime != "2017-11-12T11:27:54Z" {
-		t.Errorf("Expect expiry date time to be 2017-11-12T11:27:54Z, instead got %s", stateWithPreseed.ExpiryDatetime)
+	now = creationTimestamp.Add(20 * time.Hour)
+
+	state, _ = getDesiredNodeState(now, ctx, client, node)
+	stateTS, _ = time.Parse(time.RFC3339, state.ExpiryDatetime)
+
+	if stateTS.Before(now) && !stateTS.Before(certainlyDeadBy) {
+		t.Errorf("Expect expiry date time to be between 12 and 24h after the creation date, but not before now %s, instead got %s", creationTimestamp, state.ExpiryDatetime)
+	}
+}
+
+func TestGetDesiredNodeState_NotBeforeNow(t *testing.T) {
+	zerolog.SetGlobalLevel(zerolog.Disabled)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+
+	creationTimestamp := time.Date(2017, 11, 11, 12, 00, 00, 0, time.UTC)
+	certainlyDeadBy := creationTimestamp.Add(24 * time.Hour).Add(1 * time.Minute)
+
+	//We will expect between a 0/4 hour offset from now
+	now := creationTimestamp.Add(20 * time.Hour)
+
+	node := v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "node-1",
+			CreationTimestamp: metav1.Time{Time: creationTimestamp},
+		},
+	}
+
+	client := NewMockKubernetesClient(ctrl)
+	client.EXPECT().SetNodeAnnotation(gomock.Any(), "node-1", "estafette.io/gke-preemptible-killer-state", gomock.Any()).AnyTimes()
+
+	whitelistInstance.parseArguments()
+	state, _ := getDesiredNodeState(now, ctx, client, node)
+	stateTS, _ := time.Parse(time.RFC3339, state.ExpiryDatetime)
+
+	if stateTS.Before(now) && !stateTS.Before(certainlyDeadBy) {
+		t.Errorf("Expect expiry date time should not be before now %s, instead got %s", creationTimestamp, state.ExpiryDatetime)
 	}
 }

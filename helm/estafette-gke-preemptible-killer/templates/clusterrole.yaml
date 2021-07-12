@@ -19,7 +19,11 @@ rules:
   resources:
   - pods
   verbs:
-  - delete
   - get
   - list
+- apiGroups: [""] # "" indicates the core API group
+  resources:
+  - pods/eviction
+  verbs:
+  - create
 {{- end -}}
