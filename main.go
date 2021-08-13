@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
 	"runtime"
 	"strings"
@@ -209,16 +210,29 @@ func getCurrentNodeState(node v1.Node) (state GKEPreemptibleKillerState) {
 }
 
 // getDesiredNodeState define the state of the node, update node annotations if not present
-func getDesiredNodeState(ctx context.Context, kubernetesClient KubernetesClient, node v1.Node) (state GKEPreemptibleKillerState, err error) {
+func getDesiredNodeState(now time.Time, ctx context.Context, kubernetesClient KubernetesClient, node v1.Node) (state GKEPreemptibleKillerState, err error) {
 
-	t := node.ObjectMeta.CreationTimestamp.Time
+	twelveHours := 12 * time.Hour
+	twentyFourHours := 24 * time.Hour
+
 	drainTimeoutTime := time.Duration(*drainTimeout) * time.Second
-	// 43200 = 12h * 60m * 60s
-	randomTimeBetween0to12 := time.Duration(randomEstafette.Intn((43200)-*drainTimeout)) * time.Second
-	timeToBeAdded := 12*time.Hour + drainTimeoutTime + randomTimeBetween0to12
 
-	expiryDatetime := whitelistInstance.getExpiryDate(t, timeToBeAdded)
-	state.ExpiryDatetime = expiryDatetime.Format(time.RFC3339)
+	creationTime := node.ObjectMeta.CreationTimestamp.Time
+	nodeDeletedBy := creationTime.Add(twentyFourHours)
+
+	expectedRemainingLife := time.Duration(math.Max(float64(nodeDeletedBy.Sub(now)), 0))
+	kickOffDeletionBy := time.Duration(math.Max(float64(expectedRemainingLife-drainTimeoutTime), 0))
+
+	var randomOffset time.Duration
+	if kickOffDeletionBy > 0 {
+		randomOffset = time.Duration(randomEstafette.Intn(int(kickOffDeletionBy)))
+	}
+	if expectedRemainingLife > twelveHours && randomOffset < twelveHours {
+		randomOffset += twelveHours
+	}
+
+	expiryDateTime := whitelistInstance.getExpiryDate(now, randomOffset)
+	state.ExpiryDatetime = expiryDateTime.Format(time.RFC3339)
 
 	log.Info().
 		Str("host", node.ObjectMeta.Name).
@@ -230,11 +244,9 @@ func getDesiredNodeState(ctx context.Context, kubernetesClient KubernetesClient,
 		log.Warn().
 			Err(err).
 			Str("host", node.ObjectMeta.Name).
-			Msg("Error updating node metadata, continuing with node CreationTimestamp value instead")
+			Msg("Error updating node metadata")
 
-		state.ExpiryDatetime = t.Format(time.RFC3339)
 		nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
-
 		return
 	}
 
@@ -250,7 +262,7 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 
 	// set node state if doesn't already have annotations
 	if state.ExpiryDatetime == "" {
-		state, _ = getDesiredNodeState(ctx, kubernetesClient, node)
+		state, _ = getDesiredNodeState(time.Now(), ctx, kubernetesClient, node)
 	}
 
 	// compute time difference

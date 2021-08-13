@@ -21,10 +21,6 @@ deleted on GCloud.
 
 ## Known limitations
 
-- Pods in selected nodes are deleted, not evicted.
-- Currently deletion time is based on node creation time, so if you deploy
-  this tool when your instances have over 12h then you may experience a lot
-  of nodes getting deleted at once.
 - Selecting node pool is not supported yet, the code is processing ALL
   preemptible nodes attached to the cluster, and there is no way to limit it
   even via taints nor annotations
