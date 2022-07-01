@@ -19,6 +19,11 @@ rules:
   - delete
   - get
   - list
+- apiGroups: [""] # "" indicates the core API group
+  resources:
+  - pods/eviction
+  verbs:
+  - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
