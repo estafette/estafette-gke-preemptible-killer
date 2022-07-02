@@ -18,12 +18,12 @@ stages:
   build-lint-and-package:
     parallelStages:
       build:
-        image: golang:1.15.2-alpine3.12
+        image: golang:1.18-alpine
         env:
           CGO_ENABLED: 0
           GOOS: linux
         commands:
-        - go test ./...
+        - go test `go list ./... | grep -v /vendor/`
         - go build -a -installsuffix cgo -ldflags "-X main.version=${ESTAFETTE_BUILD_VERSION} -X main.revision=${ESTAFETTE_GIT_REVISION} -X main.branch=${ESTAFETTE_GIT_BRANCH} -X main.buildDate=${ESTAFETTE_BUILD_DATETIME}" -o ./publish/${ESTAFETTE_GIT_NAME} .
 
       lint-helm-chart:
@@ -66,7 +66,7 @@ stages:
   test-helm-chart:
     services:
     - name: kubernetes
-      image: bsycorp/kind:latest-1.17
+      image: bsycorp/kind:latest-1.21
       readiness:
         path: /kubernetes-ready
         port: 10080
