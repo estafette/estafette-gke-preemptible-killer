@@ -66,7 +66,7 @@ stages:
   test-helm-chart:
     services:
     - name: kubernetes
-      image: bsycorp/kind:latest-1.17
+      image: bsycorp/kind:latest-1.21
       readiness:
         path: /kubernetes-ready
         port: 10080
