@@ -1,0 +1,82 @@
+#!/bin/bash
+
+# Copyright (C) 2019 Andrei Pavel, andrei.pavel@cti.pub.ro
+# Licensed under the MIT License
+
+# Header
+[[ -z "${ARGUMENTS+x}" ]] && ARGUMENTS="\
+  \$line
+  \$file
+  [\$timeout]
+"
+script_path="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+
+#------------------------------------------------------------------------------#
+
+function read-offset() {
+  local file
+  file="$(readlink -f "${1}")"
+  file="${file//-/_}"
+  file="${file//./_}"
+  file="${file//\//_}"
+  offset="OFFSET_${file}"
+  printf '%s' "${!offset-1}"
+}
+
+function update-offset() {
+  local file
+  file="$(readlink -f "${1}")"
+  file="${file//-/_}"
+  file="${file//./_}"
+  file="${file//\//_}"
+  read -r "OFFSET_${file}" <<< "${2}"
+}
+
+function update-line-count-for-file() {
+  file="$(readlink -f "${1}")"
+  line_count_in_file="$(wc -l "${file}" | cut -d ' ' -f 1)"
+  update-offset "${file}" "$(( line_count_in_file + 1 ))"
+}
+
+line="$(printf '%q' "${1}")"
+line="${line//\//\\\/}"
+file="$(readlink -f "${2}")"
+timeout="${3-30 seconds}"
+finish="$(date +%s -d "${timeout}")"
+
+# Wait for file to be created.
+while [[ ! -f ${file} ]]; do
+  sleep 1s
+done
+
+while true; do
+  # Check if timeout has passed.
+  if (( "${finish}" < "$(date +%s)" )); then
+    printf "
+ERROR: Timed out after ${timeout} of waiting for line in file:
++- line: ${line}
++- file: ${file}
+
+%s\n" "$(tail "${file}")" >&2
+    exit 1
+  fi
+
+  offset="$(read-offset "${file}")"
+  # Check if we have reached end of file.
+  line_count_in_file="$(wc -l "${file}" | cut -d ' ' -f 1)"
+  if (( offset > line_count_in_file )); then
+    sleep 1s
+    continue
+  fi
+
+  line_number_found="$(sed "${offset},${line_count_in_file}!d;/${line}/!d;=" "${file}" | head -n 1)" || true
+
+  if [[ -z "${line_number_found}" ]]; then
+    # not found
+    update-offset "${file}" "$(( line_count_in_file + 1 ))"
+  else
+    # found
+    update-offset "${file}" "$(( line_number_found + 1 ))"
+    break
+  fi
+done
