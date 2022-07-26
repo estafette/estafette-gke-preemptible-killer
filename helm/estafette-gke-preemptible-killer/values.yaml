@@ -25,6 +25,13 @@ secret:
   # sets a json keyfile for a gcp service account
   googleServiceAccountKeyfileJson: '{"type": "service_account"}'
 
+  # provide your own secret with the gcp service account json
+  googleServiceAccountSecret:
+    # name of secret
+    name: ""
+    # key of secret
+    key: ""
+
 # the following log formats are available: plaintext, console, json, stackdriver, v3 (see https://github.com/estafette/estafette-foundation for more info)
 logFormat: plaintext
 
