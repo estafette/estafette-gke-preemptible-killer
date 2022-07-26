@@ -10,10 +10,10 @@ spec:
       terminationGracePeriodSeconds: 300
       containers:
       - name: preemptible-killer
-        image: estafette/estafette-gke-preemptible-killer:1.1.21
+        image: estafette/estafette-gke-preemptible-killer:1.3.1-main-129
         ports:
         - name: prom-metrics
-          containerPort: 9001
+          containerPort: 9101
         env:
         - name: DRAIN_TIMEOUT
           value: "300"
@@ -30,8 +30,8 @@ spec:
             memory: 128Mi
         livenessProbe:
           httpGet:
-            path: /metrics
-            port: prom-metrics
+            path: /liveness
+            port: 5000
           initialDelaySeconds: 30
           timeoutSeconds: 1
         volumeMounts:
