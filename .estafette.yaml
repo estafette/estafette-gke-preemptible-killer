@@ -15,7 +15,7 @@ version:
     releaseBranch: 1.3.2
 
 stages:
-  build-lint-and-package:
+  build:
     parallelStages:
       build:
         image: golang:1.18-alpine
@@ -26,19 +26,11 @@ stages:
         - go test `go list ./... | grep -v /vendor/`
         - go build -a -installsuffix cgo -ldflags "-X main.version=${ESTAFETTE_BUILD_VERSION} -X main.revision=${ESTAFETTE_GIT_REVISION} -X main.branch=${ESTAFETTE_GIT_BRANCH} -X main.buildDate=${ESTAFETTE_BUILD_DATETIME}" -o ./publish/${ESTAFETTE_GIT_NAME} .
 
-      lint-helm-chart:
-        image: extensions/helm:dev
-        action: lint
-
-      package-helm-chart:
-        image: extensions/helm:dev
-        action: package
-
   bake:
     image: extensions/docker:dev
     action: build
     repositories:
-    - estafette
+    - pkhanhbkhn
     path: ./publish
     copy:
     - /etc/ssl/certs/ca-certificates.crt
@@ -61,51 +53,4 @@ stages:
     image: extensions/docker:dev
     action: push
     repositories:
-    - estafette
-
-  test-helm-chart:
-    services:
-    - name: kubernetes
-      image: bsycorp/kind:latest-1.21
-      readiness:
-        path: /kubernetes-ready
-        port: 10080
-    image: extensions/helm:dev
-    action: test
-    values: |-
-      nonExistingValue: with-a-random-value
-
-  clone-charts-repo:
-    image: extensions/git-clone:dev
-    repo: helm-charts
-    branch: main
-
-  publish-helm-chart:
-    image: extensions/helm:dev
-    action: publish
-    repoBranch: main
-
-  slack-notify:
-    image: extensions/slack-build-status:dev
-    workspace: estafette
-    channels:
-    - '#build-status'
-    when:
-      status == 'succeeded' ||
-      status == 'failed'
-
-releases:
-  release:
-    stages:
-      clone-charts-repo:
-        image: extensions/git-clone:dev
-        repo: helm-charts
-        branch: main
-
-      purge-prerelease-helm-charts:
-        image: extensions/helm:dev
-        action: purge
-        repoBranch: main
-
-      create-github-release:
-        image: extensions/github-release:dev
+    - pkhanhbkhn
