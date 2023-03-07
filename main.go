@@ -60,6 +60,9 @@ var (
 			Default("").
 			Short('w').
 			String()
+	monitorSpotInstances = kingpin.Flag("montor-spot-instances", "Monitor and manage spot instances instead of preemptible").
+			Envar("MONITOR_SPOT_INSTANCES").
+			Bool()
 
 	// define prometheus counter
 	nodeTotals = prometheus.NewCounterVec(

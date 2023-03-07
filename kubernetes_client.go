@@ -59,8 +59,12 @@ func (c *kubernetesClient) GetProjectIdAndZoneFromNode(ctx context.Context, node
 // GetPreemptibleNodes return a list of preemptible node
 func (c *kubernetesClient) GetPreemptibleNodes(ctx context.Context, filters map[string]string) (nodes *v1.NodeList, err error) {
 
-	labelSelector := labels.Set{
-		"cloud.google.com/gke-preemptible": "true",
+	labelSelector := labels.Set{}
+
+	if *monitorSpotInstances {
+		labelSelector["cloud.google.com/gke-spot"] = "true"
+	} else {
+		labelSelector["cloud.google.com/gke-preemptible"] = "true"
 	}
 
 	for key, value := range filters {

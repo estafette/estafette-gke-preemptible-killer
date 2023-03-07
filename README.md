@@ -45,6 +45,7 @@ You can either use environment variables or flags to configure the following set
 | METRICS_LISTEN_ADDRESS | --metrics-listen-address | :9001    | The address to listen on for Prometheus metrics requests
 | METRICS_PATH           | --metrics-path           | /metrics | The path to listen for Prometheus metrics requests
 | WHITELIST_HOURS        | --whitelist-hours (-w)   |          | List of UTC time intervals in the form of `09:00 - 12:00, 13:00 - 18:00` in which deletion is allowed and preferred
+| MONITOR_SPOT_INSTANCES | --montor-spot-instances  |          | Monitor and manage spot instances instead of preemptible
 
 ### Create a Google Service Account
 
